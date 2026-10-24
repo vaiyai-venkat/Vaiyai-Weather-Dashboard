@@ -1,0 +1,14 @@
+{
+  "station_id": "IPAPAN3",
+  "station_name": "Vaiyaicheri",
+  "station_name_local": "திருவையை",
+  "location": "Papanasam, Tamil Nadu, India",
+  "latitude": 10.86,
+  "longitude": 79.19,
+  "timezone": "Asia/Kolkata",
+  "installation_date": null,
+  "initial_history_days": 30,
+  "backfill_days_per_run": 7,
+  "request_pause_seconds": 1,
+  "rain_day_threshold_mm": 0.2
+}

@@ -1,0 +1,72 @@
+name: Update weather & deploy Pages
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: 'Optional backfill start (YYYY-MM-DD); also set WU_INSTALLATION_DATE for future runs'
+        required: false
+        type: string
+      max_backfill:
+        description: 'Older days to collect this run (0–366)'
+        default: '7'
+        type: string
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+concurrency:
+  group: weather-pages
+  cancel-in-progress: false
+jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify collector
+        run: python -m unittest discover -s tests -v
+      - name: Collect station observations
+        id: collect
+        continue-on-error: true
+        env:
+          WU_API_KEY: ${{ secrets.WU_API_KEY }}
+          WU_INSTALLATION_DATE: ${{ vars.WU_INSTALLATION_DATE }}
+          START_DATE: ${{ inputs.start_date }}
+          MAX_BACKFILL: ${{ inputs.max_backfill }}
+        run: |
+          args=()
+          if [ -n "$START_DATE" ]; then args+=(--start-date "$START_DATE"); fi
+          if [ -n "$MAX_BACKFILL" ]; then args+=(--max-backfill "$MAX_BACKFILL"); fi
+          python collector.py "${args[@]}"
+      - name: Save observation archive
+        if: always()
+        run: |
+          git config user.name "Weather archive bot"
+          git config user.email "weather-bot@users.noreply.github.com"
+          git add dist/data
+          if ! git diff --cached --quiet; then
+            git commit -m "Update IPAPAN3 observations [skip ci]"
+            git push origin main
+          fi
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - uses: actions/deploy-pages@v4
+        id: deployment
+      - name: Report collection issue
+        if: steps.collect.outcome == 'failure'
+        run: echo '::warning::Weather collection failed. Pages was deployed with retained observations; see the dashboard status and collection step.'

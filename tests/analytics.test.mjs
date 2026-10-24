@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {circularMean,compass,rangeFor,fillDays,rainSum,extreme,roseBins} from '../dist/analytics.mjs';
+assert.ok(Math.abs(circularMean([350,10])-0)<1e-8);
+assert.equal(circularMean([90,270]),null);
+assert.equal(compass(359),'N');
+assert.deepEqual(rangeFor('week','2026-10-24'),{start:'2026-10-18',end:'2026-10-24'});
+assert.deepEqual(rangeFor('month','2026-10-24'),{start:'2026-10-01',end:'2026-10-24'});
+assert.deepEqual(rangeFor('year','2026-10-24'),{start:'2026-01-01',end:'2026-10-24'});
+assert.deepEqual(rangeFor('installation','2026-10-24','2023-02-01'),{start:'2023-02-01',end:'2026-10-24'});
+const r=[{date:'2026-10-01',rain_total:2,temp_max:34},{date:'2026-10-03',rain_total:3,temp_max:34}];
+assert.equal(rainSum(r),5);assert.equal(rainSum([{rain_total:null}]),null);
+assert.equal(fillDays(r,'2026-10-01','2026-10-03')[1].missing,true);
+assert.deepEqual(extreme(r,'temp_max','max'),{value:34,date:'2026-10-01',ties:2});
+assert.equal(roseBins([{wind_dir:355,wind_avg:5},{wind_dir:5,wind_avg:2},{wind_dir:90,wind_avg:0},{wind_dir:null,wind_avg:2}]).bins[0],2);
+assert.equal(roseBins([{wind_dir:90,wind_avg:0}]).calm,1);
+console.log('Analytics checks passed: rainfall, date windows, gaps, ties and circular directions.');
