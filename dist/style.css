@@ -26,3 +26,8 @@ body.light{--cyan:#126f5d;--blue:#1e65a6;--orange:#a65015;--gold:#80600c;--purpl
 /* Composite weather brand mark. */
 .brand-weather-icon{width:44px;height:44px;flex:none}
 @media(max-width:600px){.brand-weather-icon{width:38px;height:38px}}
+
+/* The exact link thumbnail also serves as the page cover, without cropping. */
+.dashboard-cover{margin:26px 0 28px;overflow:hidden;border:1px solid var(--line);border-radius:20px;background:#071a2b;box-shadow:var(--shadow)}
+.dashboard-cover img{display:block;width:100%;height:auto;aspect-ratio:1733/907;object-fit:contain}
+@media(max-width:600px){.dashboard-cover{margin:18px 0 22px;border-radius:13px}}

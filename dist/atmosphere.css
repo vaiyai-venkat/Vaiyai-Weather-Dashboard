@@ -25,3 +25,5 @@ body>.topbar,body>main{position:relative;z-index:1}body>.skip{z-index:2}body>#to
 body.light #weather-background{opacity:.15}body.light .atmosphere-controls,body.light .weather-picture figcaption{background:#fff}
 @media(prefers-reduced-motion:reduce){.wx-rays,.wx-cloud,.wx-drop,.wx-star{animation:none!important}#weather-background{transition:none}}
 @media(max-width:600px){.atmosphere-controls{padding:14px;margin-bottom:20px;gap:13px}.atmosphere-intro{min-width:100%;gap:10px}.atmosphere-intro strong{font-size:16px}.atmosphere-intro small{font-size:13px}.atmosphere-actions{width:100%;gap:10px}.atmosphere-actions .button{font-size:14px;padding:9px 11px}.weather-volume-label{font-size:13px;gap:5px}#weather-volume{width:65px}.weather-picture{margin-top:16px}#weather-scene-label{font-size:18px}#weather-scene-detail{font-size:13px}.weather-scene-method{font-size:14px}}
+
+#weather-start{font-size:15px;font-weight:700;max-width:100%;white-space:normal}.atmosphere-actions{justify-content:flex-end}@media(max-width:600px){#weather-start{width:100%}.atmosphere-actions{justify-content:flex-start}}

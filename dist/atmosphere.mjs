@@ -1,5 +1,6 @@
 // Local illustrations and synthesized ambience. These are not observed cloud images.
 export const RAIN_LIMITS = Object.freeze({moderate: 2.5, extreme: 50}); // mm/hour; visual bands only
+export const GUST_WHOOSH_THRESHOLD = 20; // km/h, latest observation gust only
 const number = n => typeof n === 'number' && Number.isFinite(n);
 export const SCENES = Object.freeze({
   sunny: {label:'Sunny sky', sound:'Soft breeze & birds', top:'#143d60', bottom:'#e9ad62'},
@@ -68,19 +69,38 @@ export function sceneSVG(key, id='scene') {
 }
 
 export class Ambience {
-  constructor(){this.context=null;this.master=null;this.nodes=[];this.voices=new Set();this.timer=null;this.thunderTimer=null;this.key=null;this.enabled=false;this.volume=.22;}
-  async enable(){
+  constructor(){this.context=null;this.master=null;this.nodes=[];this.windNodes=[];this.voices=new Set();this.timer=null;this.thunderTimer=null;this.key=null;this.enabled=false;this.volume=.22;}
+  async enable(automatic=false){
     const Audio=globalThis.AudioContext||globalThis.webkitAudioContext;
     if(!Audio)throw Error('This browser does not support ambient audio.');
     if(!this.context){this.context=new Audio();this.master=this.context.createGain();this.master.gain.value=0;this.master.connect(this.context.destination);}
-    await this.context.resume();
+    const resumed=this.context.resume();
+    // Browsers can leave automatic resume pending until a user gesture.
+    if(automatic){resumed.catch(()=>{});if(this.context.state!=='running')return false;}
+    else await resumed;
     if(this.context.state!=='running')throw Error('Audio paused by the browser. Tap Sound again.');
-    this.enabled=true;
+    this.enabled=true;return true;
   }
   stop(){
     clearInterval(this.timer);clearTimeout(this.thunderTimer);this.timer=null;this.thunderTimer=null;
+    this.stopWind();
     for(const voice of this.voices){try{voice.source.stop();}catch{}for(const n of voice.nodes){try{n.disconnect();}catch{}}}this.voices.clear();
     for(const n of this.nodes){try{n.stop();}catch{}try{n.disconnect();}catch{}}this.nodes=[];this.key=null;
+  }
+  stopWind(){for(const n of this.windNodes){try{n.stop();}catch{}try{n.disconnect();}catch{}}this.windNodes=[];}
+  setGust(gust){
+    if(!number(gust)||gust<=GUST_WHOOSH_THRESHOLD){this.stopWind();return;}
+    const strength=Math.min(1,(gust-GUST_WHOOSH_THRESHOLD)/60),base=.12+strength*.16,depth=.10+strength*.12;
+    if(this.windNodes.length){this.windNodes[2].gain.setTargetAtTime(base,this.context.currentTime,.6);this.windNodes[4].gain.setTargetAtTime(depth,this.context.currentTime,.6);return;}
+    const ctx=this.context,buffer=ctx.createBuffer(1,ctx.sampleRate*4,ctx.sampleRate),data=buffer.getChannelData(0);
+    let last=0;for(let i=0;i<data.length;i++){last=(last+(Math.random()*2-1)*.06)/1.02;data[i]=last*3;}
+    const source=ctx.createBufferSource();source.buffer=buffer;source.loop=true;
+    const filter=ctx.createBiquadFilter();filter.type='bandpass';filter.frequency.value=430;filter.Q.value=.5;
+    const gain=ctx.createGain();gain.gain.value=base;
+    const lfo=ctx.createOscillator();lfo.type='sine';lfo.frequency.value=.14;
+    const modulation=ctx.createGain();modulation.gain.value=depth;
+    source.connect(filter);filter.connect(gain);gain.connect(this.master);lfo.connect(modulation);modulation.connect(gain.gain);
+    source.start();lfo.start();this.windNodes=[source,filter,gain,lfo,modulation];
   }
   trackVoice(source,nodes){
     const voice={source,nodes};this.voices.add(voice);
@@ -104,10 +124,10 @@ export class Ambience {
     source.connect(filter);filter.connect(gain);gain.connect(this.master);this.trackVoice(source,[source,filter,gain]);source.start(t);source.stop(t+duration+.02);
   }
   gain(value){if(this.master)this.master.gain.setTargetAtTime(value,this.context.currentTime,.2);}
-  play(key,allowed){
+  play(key,allowed,gust=0){
     if(!this.enabled||!allowed||document.hidden||key==='unknown'){this.gain(0);this.stop();return;}
     this.gain(this.volume);
-    if(this.key===key)return;
+    if(this.key===key){this.setGust(gust);return;}
     this.stop();this.key=key;
     const ctx=this.context, rain=['light','heavy','extreme'].includes(key);
     const buffer=ctx.createBuffer(1,ctx.sampleRate*4,ctx.sampleRate), data=buffer.getChannelData(0);
@@ -116,6 +136,7 @@ export class Ambience {
     const filter=ctx.createBiquadFilter();filter.type=rain?'lowpass':'bandpass';filter.frequency.value=({sunny:320,night:180,cloudy:460,light:1100,heavy:3600,extreme:5200})[key];filter.Q.value=.45;
     const bed=ctx.createGain();bed.gain.value=({sunny:.28,night:.13,cloudy:.55,light:.16,heavy:.7,extreme:.85})[key];
     source.connect(filter);filter.connect(bed);bed.connect(this.master);source.start();this.nodes.push(source,filter,bed);
+    this.setGust(gust);
     if(key==='extreme')this.scheduleThunder(3000+Math.random()*4000);
     if(key==='sunny'||key==='night'){
       const chirp=()=>{if(!this.enabled||document.hidden||this.key!==key)return;const t=ctx.currentTime;
@@ -128,38 +149,70 @@ export class Ambience {
 export function setupAtmosphere(){
   const visual=document.querySelector('#weather-visual'), background=document.querySelector('#weather-background');
   const label=document.querySelector('#weather-scene-label'), detail=document.querySelector('#weather-scene-detail');
-  const soundButton=document.querySelector('#weather-sound'), volume=document.querySelector('#weather-volume'), motionButton=document.querySelector('#weather-motion');
+  const soundButton=document.querySelector('#weather-sound'), volume=document.querySelector('#weather-volume'), motionButton=document.querySelector('#weather-motion'),startButton=document.querySelector('#weather-start');
   if(!visual||!background||!soundButton)return {update(){}};
   const audio=new Ambience(), reduced=matchMedia('(prefers-reduced-motion: reduce)');
   let current={key:'unknown',fresh:false,detail:'Waiting for station observations.'},lastKey=null;
-  let latest=null, latestStation={}, sample=false;
+  let latest=null,latestStation={},sample=false,autoplayAttempted=false,audioWanted=true,needsStart=false,requestVersion=0;
   const read=(key)=>{try{return localStorage.getItem(key);}catch{return null;}};
   const save=(key,value)=>{try{localStorage.setItem(key,value);}catch{}};
-  let paused=reduced.matches||read('weather-motion')==='paused';
+  // Start animation on each visit; always respect the device motion preference.
+  let paused=reduced.matches;
   const savedVolume=Number(read('weather-volume'));if(read('weather-volume')!==null && Number.isFinite(savedVolume))audio.volume=Math.max(0,Math.min(.6,savedVolume));volume.value=Math.round(audio.volume*100);
   function sync(){
+    const running=audio.enabled&&audio.context?.state==='running',gust=number(latest?.gust)?latest.gust:0;
     document.body.classList.toggle('weather-motion-paused',paused||!current.fresh||document.hidden);
     motionButton.textContent=paused?'▶ Animation':'Ⅱ Animation';motionButton.setAttribute('aria-pressed',String(!paused));motionButton.setAttribute('aria-label',paused?'Play weather animation':'Pause weather animation');
-    soundButton.textContent=audio.enabled?'♫ Sound on':'♫ Sound off';soundButton.setAttribute('aria-pressed',String(audio.enabled));
-    volume.disabled=!audio.enabled;audio.play(current.key,current.fresh);
-    document.querySelector('#weather-audio-status').textContent=audio.enabled?(current.fresh?SCENES[current.key].sound:'Sound paused · observation unavailable or stale'):'Optional ambient sound · tap to listen';
+    soundButton.textContent=running?'♫ Sound on':'♫ Sound off';soundButton.setAttribute('aria-pressed',String(running));
+    volume.disabled=!running;audio.play(current.key,current.fresh,gust);
+    if(startButton)startButton.hidden=!(needsStart&&current.fresh);
+    const windy=current.fresh&&gust>GUST_WHOOSH_THRESHOLD;
+    let status=running?(current.fresh?SCENES[current.key].sound+(windy?' · gust whooshes ('+gust.toLocaleString('en-IN',{maximumFractionDigits:1})+' km/h)':''):'Sound paused · observation unavailable or stale'):needsStart?'Browser requires a tap to start sound & animation':current.fresh?'Sound muted · tap Sound to enable':'Waiting for a fresh observation · sound paused';
+    if(document.hidden&&running)status='Sound paused while this tab is hidden';
+    document.querySelector('#weather-audio-status').textContent=status;
     volume.setAttribute('aria-valuetext',Math.round(audio.volume*100)+' percent');
   }
-  soundButton.addEventListener('click',async()=>{
-    try{if(audio.enabled){audio.enabled=false;audio.gain(0);audio.stop();}else await audio.enable();sync();}
-    catch(e){audio.enabled=false;sync();document.querySelector('#weather-audio-status').textContent=e.message;}
+  async function startExperience(automatic=false){
+    const version=++requestVersion;audioWanted=true;
+    if(!automatic)paused=reduced.matches;
+    try{
+      const enabled=await audio.enable(automatic);
+      if(version!==requestVersion||!audioWanted){audio.enabled=false;sync();return;}
+      needsStart=!enabled;
+      audio.context.onstatechange=()=>{
+        audio.enabled=audioWanted&&audio.context.state==='running';
+        if(audio.enabled)needsStart=false;
+        else if(audioWanted&&current.fresh)needsStart=true;
+        sync();
+      };
+      sync();
+    }catch(e){audio.enabled=false;needsStart=true;sync();document.querySelector('#weather-audio-status').textContent=e.message;}
+  }
+  soundButton.addEventListener('click',()=>{
+    if(audio.enabled&&audio.context?.state==='running'){++requestVersion;audioWanted=false;needsStart=false;audio.enabled=false;audio.gain(0);audio.stop();sync();}
+    else startExperience(false);
+  });
+  startButton?.addEventListener('click',()=>startExperience(false));
+  // One natural click/tap can unlock audio if the arrival attempt was blocked.
+  document.addEventListener('click',event=>{
+    if(!event.isTrusted||event.target.closest('.atmosphere-controls'))return;
+    if(needsStart&&audioWanted&&current.fresh)startExperience(false);
   });
   volume.addEventListener('input',()=>{audio.volume=Number(volume.value)/100;save('weather-volume',String(audio.volume));sync();});
-  motionButton.addEventListener('click',()=>{paused=!paused;save('weather-motion',paused?'paused':'playing');sync();});
+  motionButton.addEventListener('click',()=>{paused=!paused;sync();});
   reduced.addEventListener('change',e=>{if(e.matches)paused=true;sync();});
   document.addEventListener('visibilitychange',()=>update(latest,latestStation,sample));
-  addEventListener('pagehide',()=>{audio.enabled=false;audio.gain(0);audio.stop();});
+  addEventListener('pagehide',()=>{++requestVersion;audioWanted=false;audio.enabled=false;audio.gain(0);audio.stop();});
+  addEventListener('pageshow',event=>{if(event.persisted){audioWanted=true;autoplayAttempted=false;update(latest,latestStation,sample);}});
   function update(observation,station,demo=false){
     latest=observation;latestStation=station;sample=demo;
     current=classifyWeather(observation,station,Date.now(),demo);
     if(current.key!==lastKey){visual.innerHTML=sceneSVG(current.key,'card');background.innerHTML=sceneSVG(current.key,'backdrop');lastKey=current.key;}
     document.body.dataset.weather=current.key;
     label.textContent=SCENES[current.key].label;detail.textContent=current.detail;sync();
+    if(!autoplayAttempted&&audioWanted&&current.fresh&&current.key!=='unknown'){
+      autoplayAttempted=true;startExperience(true);
+    }
   }
   // Recheck age even if archive polling fails or no new observation arrives.
   setInterval(()=>{if(!document.hidden)update(latest,latestStation,sample);},30000);
