@@ -91,11 +91,13 @@ def point_record(raw, timezone, current=False):
         'rain_rate': number(m.get('precipRate')),
         'dew': number(m.get('dewpt')) if current else number(m.get('dewptAvg')),
         'pressure': number(m.get('pressure')) if current else number(m.get('pressureMax')),
+        'pressure_min': number(m.get('pressure' if current else 'pressureMin')),
+        'pressure_max': number(m.get('pressure' if current else 'pressureMax')),
     }
 
 
 def has_readings(row):
-    return any(number(row.get(k)) is not None for k in ['temp_avg', 'temp_max', 'humidity_avg', 'rain_total', 'wind_avg', 'solar_max', 'uv_max'])
+    return any(number(row.get(k)) is not None for k in ['temp_avg', 'temp_max', 'humidity_avg', 'rain_total', 'wind_avg', 'solar_max', 'uv_max', 'pressure_min', 'pressure_max'])
 
 
 def write_json(path, value):

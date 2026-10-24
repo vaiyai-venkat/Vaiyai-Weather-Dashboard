@@ -29,6 +29,12 @@ class NormalizationTests(unittest.TestCase):
         self.assertIsNone(collector.direction(-9999))
         self.assertEqual(collector.direction(360), 0)
 
+    def test_pressure_bounds_are_preserved_for_interval_charts(self):
+        row = collector.point_record({'obsTimeUtc':'2026-10-24T06:00:00Z','obsTimeLocal':'2026-10-24 11:30:00','metric':{'pressureMin':1005.2,'pressureMax':1010.8}},'Asia/Kolkata')
+        self.assertEqual(row['pressure_min'],1005.2)
+        self.assertEqual(row['pressure_max'],1010.8)
+        self.assertTrue(collector.has_readings({'pressure_min':1005.2}))
+
     def test_current_casing_and_interval_casing(self):
         current = collector.point_record({'epoch': 1792778400, 'humidity': 90, 'winddir': 360, 'solarRadiation': 0, 'metric': {'windSpeed': 2.5, 'windGust': 4.7, 'temp': 27}}, 'Asia/Kolkata', True)
         interval = collector.point_record({'epoch': 1792778400, 'humidityAvg': 90, 'winddirAvg': 10, 'solarRadiationHigh': 240, 'metric': {'windspeedAvg': 3.1, 'windgustHigh': 8.2, 'tempAvg': 28}}, 'Asia/Kolkata')

@@ -1,7 +1,10 @@
 import {finite,mean,sum,extreme,circularMean,compass,dateAdd,rangeFor,fillDays,rainSum,roseBins} from './analytics.mjs';
 import {demoData} from './demo.mjs';
+import {enrichDaily,enrichInterval} from './comparison.mjs';
+import {setupComparison} from './compare-ui.mjs?v=20261024-readable-pages';
+import {setupPageViews} from './pages.mjs';
 const $=s=>document.querySelector(s),text=(s,v)=>{$(s).textContent=v;};
-let manifest=null,rows=[],selected=[],chartRows=[],range={},demo=false,loadVersion=0,intervalCache=new Map(),intervalLoading=new Set();
+let manifest=null,rows=[],selected=[],chartRows=[],range={},demo=false,loadVersion=0,intervalCache=new Map(),intervalLoading=new Set(),comparisonUI=null,pageUI=null;
 const NS='http://www.w3.org/2000/svg';
 function svg(tag,attrs={},content){const n=document.createElementNS(NS,tag);for(const [k,v]of Object.entries(attrs))n.setAttribute(k,String(v));if(content!=null)n.textContent=content;return n;}
 function append(parent,tag,attrs,content){const n=svg(tag,attrs,content);parent.append(n);return n;}
@@ -22,12 +25,12 @@ async function load(useDemo=false){
   if(useDemo){({manifest:m,rows:r}=demoData());}
   else{m=await json('data/manifest.json');const chunks=await Promise.all((m.months||[]).map(month=>json(`data/history/${month}.json`)));r=chunks.flat().filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d.date));}
   if(version!==loadVersion)return;
-  manifest=m;intervalCache.clear();intervalLoading.clear();rows=[...new Map(r.map(d=>[d.date,d])).values()].sort((a,b)=>a.date.localeCompare(b.date));demo=useDemo;
+  manifest=m;intervalCache.clear();intervalLoading.clear();rows=[...new Map(r.map(d=>[d.date,enrichDaily(d)])).values()].sort((a,b)=>a.date.localeCompare(b.date));demo=useDemo;
   const params=new URLSearchParams(location.search);if(demo)params.set('demo','1');else params.delete('demo');history.replaceState(null,'',location.pathname+(params.size?'?'+params:'')+location.hash);
   text('#station-name',m.station.name);text('#location',`${m.station.location} · ${m.station.latitude}°N, ${m.station.longitude}°E`);
   const today=stationToday();['#anchor','#start','#end'].forEach(id=>{$(id).max=today;});
   $('#anchor').value=today;$('#start').value=dateAdd(today,-6);$('#end').value=today;
-  renderCurrent();render();
+  comparisonUI?.reset();renderCurrent();render();
   if(demo)notify('DEMO PREVIEW · All readings and the installation date below are illustrative, not live IPAPAN3 observations.','Connect real data');
   else if(m.status?.state==='error')notify('Collection issue · '+m.status.message+' Previously collected readings are retained.','Check setup');
   else if(m.mode==='unconfigured')notify('Station archive not connected yet. Add your API key to start collecting real IPAPAN3 observations.','Set up station');
@@ -75,7 +78,7 @@ function render(){
  if(oneDay&&!demo&&!intervals.length&&(manifest.intraday_dates||[]).includes(range.start)&&!intervalLoading.has(range.start)&&!intervalCache.has(range.start)){
   const day=range.start;intervalLoading.add(day);json(`data/intraday/${day}.json`).then(points=>{intervalCache.set(day,points);if(range.start===day&&range.end===day)render();}).catch(()=>{intervalCache.set(day,[]);}).finally(()=>intervalLoading.delete(day));
  }
- chartRows=oneDay?intervals:fillDays(selected,range.start,range.end);
+ chartRows=oneDay?intervals.map(enrichInterval):fillDays(selected,range.start,range.end);
  text('#chart-note',oneDay?'Reporting intervals · hover, tap or use arrow keys':'Daily observations · hover, tap or use arrow keys');
  document.querySelector('[data-chart=temperature]').closest('article').querySelector('.chart-sub>span').textContent=oneDay?'Reporting interval high, mean & low':'Daily high, average & low';
  document.querySelector('[data-chart=solar]').closest('article').querySelector('.chart-sub>span').textContent=oneDay?'Peak of each reporting interval':'Daily peak irradiance';
@@ -85,7 +88,9 @@ function render(){
  text('#rain-caption',$('#rain-mode').value==='rate'?(oneDay?'Reporting interval rain rate · mm/h':'Daily peak reported rate · mm/h'):oneDay?'Day-to-time accumulation · mm':$('#rain-mode').value==='daily'?'Daily rainfall · mm':'Cumulative recorded rainfall · mm');
  $('#rain-mode').disabled=false;
  text('#rain-total',fmt(rainSum(selected))+' mm total');
- for(const type of ['temperature','rain','humidity','wind','solar','uv'])drawChart(type,chartRows,oneDay);
+ text('#pressure-caption',oneDay?'Reporting interval high & low · dashed range midpoint':'Reported daily high & low · dashed range midpoint');
+ for(const type of ['temperature','rain','humidity','wind','solar','uv','pressure'])drawChart(type,chartRows,oneDay);
+ comparisonUI?.render();
 }
 function summary(){
  clear($('#summary'));
@@ -96,20 +101,22 @@ function summary(){
  ['Humidity',avgHum,'%','purple','◉','High '+fmt(extreme(selected,'humidity_max','max')?.value,0)+'%','Low '+fmt(extreme(selected,'humidity_min','min')?.value,0)+'%','humidity-chart'],
  ['Mean wind',wind,'km/h','cyan','≋','Peak gust',fmt(gust?.value)+' km/h','wind-chart'],
  ['Peak solar',solar?.value,'W/m²','gold','☀','Record date',dateLabel(solar?.date,false),'solar-chart'],
- ['Peak UV',uv?.value,'index','pink','◌','Record date',dateLabel(uv?.date,false),'uv-chart']];
+ ['Peak UV',uv?.value,'index','pink','◌','Record date',dateLabel(uv?.date,false),'uv-chart'],
+ ['Pressure midpoint',mean(selected.map(r=>r.pressure_mid)),'hPa','pressure-color','◎','High '+fmt(extreme(selected,'pressure_max','max')?.value),'Low '+fmt(extreme(selected,'pressure_min','min')?.value),'pressure-chart']];
  for(const [label,value,unit,color,icon,foot1,foot2,target]of specs){
-  const card=el('button','summary-card');card.type='button';card.title='View '+label+' chart';
+  const card=el('button','summary-card');card.type='button';card.title=label==='Pressure midpoint'?'Mean of available daily pressure range midpoints (high + low) ÷ 2. View pressure chart.':'View '+label+' chart';
   const head=el('div','summary-label');head.append(el('span','',label),el('span',color,icon));
   const v=el('div','value '+color,fmt(value,label==='Peak solar'?0:1));v.append(el('small','',unit));
-  const foot=el('div','summary-foot');foot.append(el('span','',foot1),el('span','',foot2));card.append(head,v,foot);card.onclick=()=>document.getElementById(target).scrollIntoView({behavior:'smooth',block:'center'});$('#summary').append(card);
+  const foot=el('div','summary-foot');foot.append(el('span','',foot1),el('span','',foot2));card.append(head,v,foot);card.onclick=()=>pageUI.navigate(target);$('#summary').append(card);
  }
 }
 function records(){
  clear($('#records-body'));
- const specs=[['Temperature','temp_max','temp_min','temp_avg','°C',1],['Humidity','humidity_max','humidity_min','humidity_avg','%',0],['Daily precipitation','rain_total','rain_total',null,'mm',1],['Peak rain rate','rain_rate_max','rain_rate_max',null,'mm/h',1],['Wind speed','wind_max','wind_min','wind_avg','km/h',1],['Wind gust','gust_max','gust_min','gust_avg','km/h',1],['Solar radiation','solar_max','solar_max',null,'W/m²',0],['UV index','uv_max','uv_max',null,'index',1],['Dew point','dew_max','dew_min','dew_avg','°C',1],['Pressure','pressure_max','pressure_min',null,'hPa',1]];
+ const specs=[['Temperature','temp_max','temp_min','temp_avg','°C',1],['Humidity','humidity_max','humidity_min','humidity_avg','%',0],['Daily precipitation','rain_total','rain_total',null,'mm',1],['Peak rain rate','rain_rate_max','rain_rate_max',null,'mm/h',1],['Wind speed','wind_max','wind_min','wind_avg','km/h',1],['Wind gust','gust_max','gust_min','gust_avg','km/h',1],['Solar radiation','solar_max','solar_max',null,'W/m²',0],['UV index','uv_max','uv_max',null,'index',1],['Dew point','dew_max','dew_min','dew_avg','°C',1],['Pressure','pressure_max','pressure_min','pressure_mid','hPa',1]];
  for(const [label,hi,lo,avg,unit,digits]of specs){
   const high=extreme(selected,hi,'max'),low=extreme(selected,lo,'min'),tr=el('tr');
   const name=el('td','',label);if(['Solar radiation','UV index','Peak rain rate'].includes(label))name.append(el('small','','Highest / lowest daily peak'));
+  if(label==='Pressure')name.append(el('small','','Mean column shows daily range midpoints'));
   tr.append(name,el('td','',high?`${fmt(high.value,digits)} ${unit}`:'—'));
   for(const [value,type]of [[high,'date'],[low,'value'],[low,'date']]){
    const td=el('td','',type==='date'?dateLabel(value?.date):value?`${fmt(value.value,digits)} ${unit}`:'—');if(type==='date'&&value?.ties>1)td.append(el('small','',`+ ${value.ties-1} tied ${value.ties===2?'day':'days'}`));tr.append(td);
@@ -137,29 +144,30 @@ function linePath(data,key,x,y){let d='',up=false;data.forEach((r,i)=>{if(!finit
 function areaPath(data,low,high,x,y){let out='',segment=[];const flush=()=>{if(segment.length){out+='M'+segment.map(i=>`${x(i)},${y(data[i][high])}`).join('L')+'L'+segment.reverse().map(i=>`${x(i)},${y(data[i][low])}`).join('L')+'Z';segment=[];}};data.forEach((r,i)=>{if(finite(r[low])&&finite(r[high]))segment.push(i);else flush();});flush();return out;}
 function drawChart(type,data,oneDay){
  const container=document.querySelector(`[data-chart=${type}]`);clear(container);
- const map=oneDay?{temperature:['temp_max','temp_min','temp'],humidity:['humidity'],wind:['wind','gust'],solar:['solar'],uv:['uv'],rain:['rain_total']}:{temperature:['temp_max','temp_min','temp_avg'],humidity:['humidity_avg','humidity_min','humidity_max'],wind:['wind_avg','gust_max'],solar:['solar_max'],uv:['uv_max'],rain:['rain_total']};
+ const map=oneDay?{temperature:['temp_max','temp_min','temp'],humidity:['humidity'],wind:['wind','gust'],solar:['solar'],uv:['uv'],rain:['rain_total'],pressure:['pressure_max','pressure_min','pressure_mid']}:{temperature:['temp_max','temp_min','temp_avg'],humidity:['humidity_avg','humidity_min','humidity_max'],wind:['wind_avg','gust_max'],solar:['solar_max'],uv:['uv_max'],rain:['rain_total'],pressure:['pressure_max','pressure_min','pressure_mid']};
  let series=data.map(r=>({...r})),keys=type==='rain'&&$('#rain-mode').value==='rate'?[oneDay?'rain_rate':'rain_rate_max']:map[type],cumulative=type==='rain'&&!oneDay&&$('#rain-mode').value==='cumulative';
  if(cumulative){let total=0;series=series.map(r=>{if(!finite(r.rain_total))return {...r,rain_total:null};total+=r.rain_total;return {...r,rain_total:total};});}
  const values=series.flatMap(r=>keys.map(k=>r[k])).filter(finite);
  if(!values.length){const n=el('div','empty',oneDay?'No interval readings for this date':'No sensor readings in this period');n.append(el('small','',oneDay?'Daily records below may still be available.':'Missing values are kept blank.'));container.append(n);return;}
- const W=580,H=214,L=40,R=12,T=16,B=27,pw=W-L-R,ph=H-T-B;
+ const W=Math.max(320,Math.round(container.clientWidth)),H=280,L=66,R=18,T=20,B=38,pw=W-L-R,ph=H-T-B;
  let min=Math.min(...values),max=Math.max(...values);
  if(type==='humidity'){min=0;max=100;}else if(['rain','solar','uv','wind'].includes(type)){min=0;max=Math.max(max*1.15,1);}else{min=Math.floor(min-2);max=Math.ceil(max+2);}
  if(max===min)max=min+1;
  const x=i=>L+(data.length>1?i/(data.length-1)*pw:pw/2),y=v=>T+ph-(v-min)/(max-min)*ph;
  const root=svg('svg',{viewBox:`0 0 ${W} ${H}`,role:'img','aria-label':`${type} chart, ${dateLabel(range.start)} to ${dateLabel(range.end)}. Use arrow keys on chart to explore.`});container.append(root);
  for(let i=0;i<=4;i++){const v=min+(max-min)*i/4,yy=y(v);append(root,'line',{x1:L,y1:yy,x2:W-R,y2:yy,stroke:'var(--grid)','stroke-dasharray':'3 5','stroke-width':.7});append(root,'text',{x:L-9,y:yy+3,'text-anchor':'end'},fmt(v,max>50?0:1));}
- const ticks=[...new Set([0,Math.round((data.length-1)*.25),Math.round((data.length-1)*.5),Math.round((data.length-1)*.75),data.length-1])];
- for(const i of ticks){if(!data[i])continue;const label=oneDay?new Date(data[i].time).toLocaleTimeString('en-GB',{timeZone:manifest.station.timezone,hour:'2-digit',minute:'2-digit'}):new Date(data[i].date+'T12:00:00Z').toLocaleDateString('en-GB',{timeZone:'UTC',day:'numeric',month:'short'});append(root,'text',{x:x(i),y:H-7,'text-anchor':i===0?'start':i===data.length-1?'end':'middle'},label);}
- const color={temperature:'var(--orange)',rain:'var(--blue)',humidity:'var(--purple)',wind:'var(--cyan)',solar:'var(--gold)',uv:'var(--pink)'}[type];
+ const tickFractions=W<420?[0,.5,1]:[0,.25,.5,.75,1];
+ const ticks=[...new Set(tickFractions.map(f=>Math.round((data.length-1)*f)))];
+ for(const i of ticks){if(!data[i])continue;const label=oneDay?new Date(data[i].time).toLocaleTimeString('en-GB',{timeZone:manifest.station.timezone,hour:'2-digit',minute:'2-digit'}):new Date(data[i].date+'T12:00:00Z').toLocaleDateString('en-GB',{timeZone:'UTC',day:'numeric',month:'short'});append(root,'text',{x:x(i),y:H-10,'text-anchor':i===0?'start':i===data.length-1?'end':'middle'},label);}
+ const color={temperature:'var(--orange)',rain:'var(--blue)',humidity:'var(--purple)',wind:'var(--cyan)',solar:'var(--gold)',uv:'var(--pink)',pressure:'var(--pressure)'}[type];
  const defs=append(root,'defs');const grad=append(defs,'linearGradient',{id:`gradient-${type}`,x1:'0',y1:'0',x2:'0',y2:'1'});append(grad,'stop',{offset:0,'stop-color':color,'stop-opacity':.22});append(grad,'stop',{offset:1,'stop-color':color,'stop-opacity':0});
- if(type==='temperature'||(type==='humidity'&&!oneDay)){const low=type==='temperature'?'temp_min':'humidity_min',high=type==='temperature'?'temp_max':'humidity_max';append(root,'path',{d:areaPath(series,low,high,x,y),fill:color,opacity:.1});}
+ if(['temperature','pressure'].includes(type)||(type==='humidity'&&!oneDay)){const low=type==='temperature'?'temp_min':type==='pressure'?'pressure_min':'humidity_min',high=type==='temperature'?'temp_max':type==='pressure'?'pressure_max':'humidity_max';append(root,'path',{d:areaPath(series,low,high,x,y),fill:color,opacity:.1});}
  if(['solar','uv','humidity','wind'].includes(type)||(type==='rain'&&(cumulative||oneDay))){const base=series.map(r=>({...r,baseline:min}));append(root,'path',{d:areaPath(base,'baseline',keys[0],x,y),fill:`url(#gradient-${type})`});}
  if(type==='rain'&&!cumulative&&!oneDay){const bar=Math.min(32,pw/Math.max(data.length,1)*.56);series.forEach((r,i)=>{if(!finite(r[keys[0]]))return;const height=Math.max(r[keys[0]]>0?1:0,y(0)-y(r[keys[0]]));if(height)append(root,'rect',{x:x(i)-bar/2,y:y(r[keys[0]]),width:bar,height,rx:Math.min(3,bar/2),fill:color,opacity:.8});});}
- else keys.forEach((key,i)=>{const col=type==='temperature'?(i===1?'var(--pink)':color):type==='wind'&&i===1?'var(--muted)':color;append(root,'path',{d:linePath(series,key,x,y),fill:'none',stroke:col,'stroke-width':i===2?1.1:1.8,'stroke-linecap':'round','stroke-linejoin':'round',...(type==='wind'&&i===1||type==='temperature'&&i===2?{'stroke-dasharray':'4 4'}:{})});if(data.length<50)series.forEach((r,j)=>{if(finite(r[key]))append(root,'circle',{cx:x(j),cy:y(r[key]),r:data.length===1?3:1.7,fill:col});});});
+ else keys.forEach((key,i)=>{const col=['temperature','pressure'].includes(type)?(i===1?(type==='pressure'?'var(--blue)':'var(--pink)'):color):type==='wind'&&i===1?'var(--muted)':color;append(root,'path',{d:linePath(series,key,x,y),fill:'none',stroke:col,'stroke-width':i===2?2:2.6,'stroke-linecap':'round','stroke-linejoin':'round',...(type==='wind'&&i===1||['temperature','pressure'].includes(type)&&i===2?{'stroke-dasharray':'4 4'}:{})});if(data.length<50)series.forEach((r,j)=>{if(finite(r[key]))append(root,'circle',{cx:x(j),cy:y(r[key]),r:data.length===1?3.6:2.6,fill:col});});});
  const hoverLine=append(root,'line',{x1:L,y1:T,x2:L,y2:H-B,stroke:'var(--muted)','stroke-dasharray':'3 3',visibility:'hidden'});
- const units={temperature:'°C',rain:$('#rain-mode').value==='rate'?'mm/h':'mm',humidity:'%',wind:'km/h',solar:'W/m²',uv:'index'};
- const labels={temp_max:'High',temp_min:'Low',temp_avg:'Mean',temp:'Mean',humidity_avg:'Mean',humidity_min:'Low',humidity_max:'High',humidity:'Mean',wind_avg:'Speed',wind:'Speed',gust_max:'Gust',gust:'Gust',solar_max:'Peak',solar:'Interval peak',uv_max:'Peak',uv:'Interval peak',rain_rate:'Reported rate',rain_rate_max:'Daily peak rate',rain_total:cumulative?'Accumulated':oneDay?'Accumulation':'Rainfall'};
+ const units={temperature:'°C',rain:$('#rain-mode').value==='rate'?'mm/h':'mm',humidity:'%',wind:'km/h',solar:'W/m²',uv:'index',pressure:'hPa'};
+ const labels={pressure_max:'High',pressure_min:'Low',pressure_mid:'Range midpoint',temp_max:'High',temp_min:'Low',temp_avg:'Mean',temp:'Mean',humidity_avg:'Mean',humidity_min:'Low',humidity_max:'High',humidity:'Mean',wind_avg:'Speed',wind:'Speed',gust_max:'Gust',gust:'Gust',solar_max:'Peak',solar:'Interval peak',uv_max:'Peak',uv:'Interval peak',rain_rate:'Reported rate',rain_rate_max:'Daily peak rate',rain_total:cumulative?'Accumulated':oneDay?'Accumulation':'Rainfall'};
  let focusIndex=0;
  const display=(index,px,py)=>{focusIndex=Math.max(0,Math.min(data.length-1,index));const r=series[focusIndex];if(!r)return;hoverLine.setAttribute('x1',x(focusIndex));hoverLine.setAttribute('x2',x(focusIndex));hoverLine.setAttribute('visibility','visible');const stamp=oneDay?new Date(r.time).toLocaleString('en-GB',{timeZone:manifest.station.timezone,day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})+' IST':dateLabel(r.date);let message=stamp+'\n'+keys.map(k=>`${labels[k]}  ${fmt(r[k],type==='solar'?0:1)} ${units[type]}`).join('\n');if(type==='wind'&&finite(r.wind_dir))message+='\nFrom '+compass(r.wind_dir)+' · '+fmt(r.wind_dir,0)+'°';const tip=$('#tooltip');tip.textContent=message;tip.hidden=false;tip.style.left=Math.min(px+13,innerWidth-tip.offsetWidth-12)+'px';tip.style.top=Math.max(8,Math.min(py-15,innerHeight-tip.offsetHeight-12))+'px';overlay.setAttribute('aria-valuenow',focusIndex+1);overlay.setAttribute('aria-valuetext',message.replaceAll('\n',', '));};
  const hide=()=>{$('#tooltip').hidden=true;hoverLine.setAttribute('visibility','hidden');};
@@ -170,10 +178,14 @@ $('#period').addEventListener('change',render);for(const id of ['#anchor','#star
 function movePeriod(step){let d=$('#anchor').value||stationToday(),period=$('#period').value;if(period==='today')d=dateAdd(d,step);else if(period==='week')d=dateAdd(d,7*step);else if(period==='month'){const p=new Date(d+'T12:00:00Z');p.setUTCMonth(p.getUTCMonth()+step+1,0);d=p.toISOString().slice(0,10);}else if(period==='year')d=(+d.slice(0,4)+step)+'-12-31';$('#anchor').value=d>stationToday()?stationToday():d;render();}
 $('#previous').onclick=()=>movePeriod(-1);$('#next').onclick=()=>movePeriod(1);
 $('#demo-button').onclick=()=>load(true);$('#live-button').onclick=()=>load(false);
-$('#download').onclick=()=>{const fields=['date','temp_min','temp_max','temp_avg','humidity_min','humidity_max','humidity_avg','rain_total','rain_rate_max','wind_min','wind_max','wind_avg','gust_min','gust_max','gust_avg','wind_dir','solar_max','uv_max','dew_min','dew_max','dew_avg','pressure_min','pressure_max'];const headers=['date_IST','temperature_min_C','temperature_max_C','temperature_mean_C','humidity_min_percent','humidity_max_percent','humidity_mean_percent','rain_total_mm','rain_rate_peak_mmh','wind_min_kmh','wind_max_kmh','wind_mean_kmh','gust_min_kmh','gust_max_kmh','gust_mean_kmh','wind_from_degrees','solar_peak_W_m2','UV_peak','dew_min_C','dew_max_C','dew_mean_C','pressure_min_hPa','pressure_max_hPa'];const content=[headers.join(','),...selected.map(r=>fields.map(k=>r[k]??'').join(','))].join('\r\n');const url=URL.createObjectURL(new Blob(['\uFEFF'+content],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download=`${demo?'DEMO_':''}IPAPAN3_${range.start}_${range.end}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);};
+$('#download').onclick=()=>{const fields=['date','temp_min','temp_max','temp_avg','humidity_min','humidity_max','humidity_avg','rain_total','rain_rate_max','wind_min','wind_max','wind_avg','gust_min','gust_max','gust_avg','wind_dir','solar_max','uv_max','dew_min','dew_max','dew_avg','pressure_min','pressure_max','pressure_mid'];const headers=['date_IST','temperature_min_C','temperature_max_C','temperature_mean_C','humidity_min_percent','humidity_max_percent','humidity_mean_percent','rain_total_mm','rain_rate_peak_mmh','wind_min_kmh','wind_max_kmh','wind_mean_kmh','gust_min_kmh','gust_max_kmh','gust_mean_kmh','wind_from_degrees','solar_peak_W_m2','UV_peak','dew_min_C','dew_max_C','dew_mean_C','pressure_min_hPa','pressure_max_hPa','pressure_range_midpoint_hPa'];const content=[headers.join(','),...selected.map(r=>fields.map(k=>r[k]??'').join(','))].join('\r\n');const url=URL.createObjectURL(new Blob(['\uFEFF'+content],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download=`${demo?'DEMO_':''}IPAPAN3_${range.start}_${range.end}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);};
 try{if(localStorage.getItem('ipapan3-theme')==='light')document.body.classList.add('light');}catch{}
 $('#theme').onclick=()=>{document.body.classList.toggle('light');try{localStorage.setItem('ipapan3-theme',document.body.classList.contains('light')?'light':'dark');}catch{}};
-const observer=new IntersectionObserver(entries=>{for(const e of entries)if(e.isIntersecting){document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('active',a.getAttribute('href')==='#'+e.target.id));}},{rootMargin:'-10% 0px -70% 0px'});['main','trends','records'].forEach(id=>observer.observe(document.getElementById(id)));
+comparisonUI=setupComparison({getRows:()=>rows,getToday:stationToday,getDemo:()=>demo});
+pageUI=setupPageViews({onChange:()=>{if(manifest)render();},getStationTitle:()=>`${manifest?.station?.name||'Vaiyaicheri'} Weather — IPAPAN3`});
 await load(new URLSearchParams(location.search).get('demo')==='1');
+pageUI.refresh();
+let chartResizeTimer;
+addEventListener('resize',()=>{clearTimeout(chartResizeTimer);chartResizeTimer=setTimeout(()=>{if(manifest)render();},160);});
 // Refresh data snapshots without reloading the page or resetting the selected range.
-setInterval(async()=>{if(demo||document.hidden||!manifest)return;try{const m=await json('data/manifest.json');if(m.last_attempt_at!==manifest.last_attempt_at){const r=(await Promise.all((m.months||[]).map(month=>json(`data/history/${month}.json`)))).flat();manifest=m;rows=r.sort((a,b)=>a.date.localeCompare(b.date));renderCurrent();render();if(m.status?.state==='error')notify('Collection issue · '+m.status.message);else if(m.status?.state==='ok')notify(m.backfill?.remaining_days?`History is filling in · ${m.backfill.remaining_days} dates still to check.`:'');}}catch{notify('Could not refresh the archive. Displaying the last loaded observations.');}},300000);
+setInterval(async()=>{if(demo||document.hidden||!manifest)return;try{const m=await json('data/manifest.json');if(m.last_attempt_at!==manifest.last_attempt_at){const r=(await Promise.all((m.months||[]).map(month=>json(`data/history/${month}.json`)))).flat();manifest=m;rows=r.map(enrichDaily).sort((a,b)=>a.date.localeCompare(b.date));renderCurrent();render();if(m.status?.state==='error')notify('Collection issue · '+m.status.message);else if(m.status?.state==='ok')notify(m.backfill?.remaining_days?`History is filling in · ${m.backfill.remaining_days} dates still to check.`:'');}}catch{notify('Could not refresh the archive. Displaying the last loaded observations.');}},300000);

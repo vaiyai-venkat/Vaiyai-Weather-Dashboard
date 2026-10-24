@@ -114,3 +114,44 @@ Data source documentation:
 © Analysis: VaiyaiVenkat · Data source: Weather Underground / The Weather Company.
 # Vaiyai-Weather-Dashboard
 # Vaiyai-Weather-Dashboard
+
+
+## Navigation, pressure and custom comparisons update (24 October 2026)
+
+The navigation now opens separate page-like views for Overview, Weather Trends, Compare and Records. Only the chosen view is visible. The active page remains highlighted, direct links work after data loads, and browser Back/Forward moves between views. Navigation is available on mobile as well.
+
+Atmospheric pressure has a dedicated chart in hPa, an overview summary card, dated high/low records and an export column for the range midpoint. Daily pressure high and low come from the existing archive. New interval collections preserve both pressure bounds. Older interval files that only store a high show that high without inventing a low. The plotted/summary midpoint is `(high + low) / 2`; it is not a reported daily mean. An average of midpoints is labeled accordingly.
+
+Open **Compare** to choose:
+
+- Weekly: seven-day windows ending on the selected dates, aligned by day 1–7.
+- Monthly: full calendar months, aligned by day of month. Short months retain empty slots.
+- Yearly: full calendar years, aligned by month/day. February 29 remains empty for non-leap years.
+- One or two measurements from the variable dropdowns, including temperature, dew point, rainfall, peak rain rate, humidity, wind/gust/direction, solar, UV and pressure.
+- One period for comparing variables, or two periods for comparing weather across dates. Period A is solid and period B dashed. Variables have labeled left/right axes; variables using the same units share one numeric scale.
+
+Comparison dates are independent of the overview filter. By default, period B follows the previous period; picking B manually preserves that choice when other controls change. **Use previous period** restores automatic B selection. **Swap A / B** reverses the chosen periods. Daily rainfall summary values are totals; the other numeric summaries are means of the selected daily metric. Direction summaries use circular means and chart lines break at north. Missing and future dates remain gaps rather than zeroes. Export comparison downloads the aligned values, actual dates and units as CSV.
+
+Additional checks:
+
+```bash
+node tests/comparison.test.mjs
+```
+
+This update preserves the previous QC filter fix, API credentials, collection schedule and observation archive.
+
+
+## Larger type and separate views (24 October 2026)
+
+The dashboard uses stronger contrast and larger, heavier text: 16–17px for most controls and labels on desktop, 14px chart axes, 17px record-table values and 31–36px summary readings. Mobile controls remain readable with practical touch targets. Charts reflow to the available width so the axis labels retain their size. Small screens show fewer horizontal-axis ticks to avoid overlap. Light and dark themes both use stronger text colors.
+
+Navigation behaves like separate pages while remaining compatible with a static GitHub Pages site:
+
+- `#overview`: latest conditions, date controls and selected-period summaries.
+- `#trends`: date controls, individual weather charts, pressure, the wind rose and archive coverage.
+- `#comparison`: independent variable/period comparison controls, chart and export.
+- `#records`: date controls and dated high/low records.
+
+Only one view is visible. The same date-control instance moves between Overview, Weather Trends and Records, preserving selected dates and ranges. Comparison choices are independent and remain selected when moving between views. Browser Back and Forward work. Old chart links such as `#pressure-chart` open Weather Trends and reveal the requested chart. Summary cards also open the correct chart view.
+
+The view change does not reload observations or reset the API key or installation date. The existing periodic refresh and GitHub Actions collection continue normally.
