@@ -22,3 +22,15 @@ export function demoData(){
  Object.assign(last,{temp_min:extrema('temp_min',Math.min),temp_max:extrema('temp_max',Math.max),temp_avg:avg('temp'),humidity_min:extrema('humidity',Math.min),humidity_max:extrema('humidity',Math.max),humidity_avg:avg('humidity'),wind_min:extrema('wind',Math.min),wind_max:extrema('wind',Math.max),wind_avg:avg('wind'),gust_min:extrema('gust',Math.min),gust_max:extrema('gust',Math.max),gust_avg:avg('gust'),solar_max:extrema('solar',Math.max),uv_max:extrema('uv',Math.max),rain_rate_max:extrema('rain_rate',Math.max),pressure_min:extrema('pressure_min',Math.min),pressure_max:extrema('pressure_max',Math.max)});
  return {manifest:{schema_version:1,mode:'demo',station:{id:'IPAPAN3',name:'Vaiyaicheri',local_name:'திருவையை',location:'Papanasam, Tamil Nadu, India',latitude:10.86,longitude:79.19,timezone:'Asia/Kolkata',installation_date:'2024-01-01'},current,intraday,first_date:rows[0].date,last_date:today,updated_at:now.toISOString(),history_days:rows.length,rain_day_threshold_mm:.2,status:{state:'demo'},backfill:{remaining_days:0}},rows};
 }
+
+// Illustrative interval archives for the weekly clock comparison.
+export function demoIntradayForDay(day,today,daily){
+ if(!daily||day<'2024-01-01'||day>today)return [];
+ const now=new Date(),clock=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(now).filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));
+ const limit=day===today?+clock.hour*60+(+clock.minute):1439,seed=Number(day.replaceAll('-',''))%31,points=[];
+ for(let minute=0;minute<=limit;minute+=10){const hour=minute/60,wave=Math.sin((hour-8)*Math.PI/12),sun=Math.max(0,Math.sin((hour-6)*Math.PI/12)),temp=(daily.temp_max+daily.temp_min)/2+(daily.temp_max-daily.temp_min)/2*wave,wind=Math.max(0,daily.wind_avg+2*Math.sin(hour*Math.PI/6+seed)),pressure=(daily.pressure_min+daily.pressure_max)/2+1.1*Math.sin(hour*Math.PI/6+seed/4),progress=Math.max(0,Math.min(1,(hour-12)/7));
+  const stamp=day+'T'+String(Math.floor(hour)).padStart(2,'0')+':'+String(minute%60).padStart(2,'0')+':00+05:30',humidity=Math.max(0,Math.min(100,daily.humidity_avg-wave*12));
+  points.push({date:day,time:new Date(stamp).toISOString(),temp,temp_min:temp-.2,temp_max:temp+.2,humidity,humidity_min:Math.max(0,humidity-2),humidity_max:Math.min(100,humidity+2),wind,wind_max:wind+3,gust:wind+6,wind_dir:(daily.wind_dir+15*Math.sin(hour*Math.PI/6)+360)%360,solar:daily.solar_max*sun,uv:daily.uv_max*sun,rain_total:daily.rain_total*progress,rain_rate:hour>=12&&hour<=19?daily.rain_total/7:0,dew:daily.dew_avg,pressure:pressure+.2,pressure_min:pressure-.2,pressure_max:pressure+.2});
+ }
+ return points;
+}

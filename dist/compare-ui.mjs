@@ -1,3 +1,5 @@
+import {setupWeeklyComparison} from './weekly-ui.mjs';
+import {weeklyVariable} from './weekly.mjs';
 import {finite} from './analytics.mjs';
 import {VARIABLES,comparisonSlots,alignPeriod,periodWindow,previousAnchor,axisDomain,seriesSummary} from './comparison.mjs';
 const NS='http://www.w3.org/2000/svg', $=s=>document.querySelector(s);
@@ -7,8 +9,9 @@ const dom=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.classNam
 const format=v=>finite(v)?v.toLocaleString('en-IN',{maximumFractionDigits:1}):'—';
 const dateText=d=>d?new Date(d+'T12:00:00Z').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric',timeZone:'UTC'}):'Not in calendar';
 const windowText=w=>dateText(w.start)+' – '+dateText(w.end);
-export function setupComparison({getRows,getToday,getDemo}){
+export function setupComparison({getRows,getToday,getDemo,getIntraday,getTimeZone}){
  let state=null,usePrevious=true;
+ const weekly=setupWeeklyComparison({getIntraday,getTimeZone,getDemo});
  for(const selector of ['#compare-variable-a','#compare-variable-b']){
   const select=$(selector);if(selector.endsWith('-b'))select.append(new Option('None · one variable','none'));
   for(const group of [...new Set(VARIABLES.map(v=>v.group))]){const g=document.createElement('optgroup');g.label=group;for(const v of VARIABLES.filter(v=>v.group===group))g.append(new Option(v.label,v.key));select.append(g);}
@@ -17,8 +20,9 @@ export function setupComparison({getRows,getToday,getDemo}){
  const controls=['#compare-frequency','#compare-variable-a','#compare-variable-b','#compare-mode','#compare-a','#compare-b'];
  for(const id of controls)$(id).addEventListener('change',()=>{if(id==='#compare-b')usePrevious=false;if(usePrevious&&['#compare-frequency','#compare-a'].includes(id)&&$('#compare-a').value)$('#compare-b').value=previousAnchor($('#compare-frequency').value,$('#compare-a').value);if($('#compare-variable-b').value===$('#compare-variable-a').value)$('#compare-variable-b').value='none';render();});
  $('#compare-swap').onclick=()=>{usePrevious=false;const a=$('#compare-a').value;$('#compare-a').value=$('#compare-b').value;$('#compare-b').value=a;render();};
- $('#compare-previous').onclick=()=>{usePrevious=true;$('#compare-b').value=previousAnchor($('#compare-frequency').value,$('#compare-a').value);render();};
+ $('#compare-previous').onclick=()=>{usePrevious=true;if($('#compare-frequency').value==='week')$('#compare-a').value=previousAnchor('week',$('#compare-a').value);else $('#compare-b').value=previousAnchor($('#compare-frequency').value,$('#compare-a').value);render();};
  $('#compare-download').onclick=()=>{
+  if($('#compare-frequency').value==='week'){weekly.download();return;}
   if(!state)return;
   const {slots,periods,variables}=state,header=['aligned_day'];
   for(const period of periods){header.push('period_'+period.id+'_date');for(const variable of variables)header.push(`${variable.key}_${variable.unit.replaceAll(',','')}_period_${period.id}`);}
@@ -27,11 +31,18 @@ export function setupComparison({getRows,getToday,getDemo}){
  };
  function reset(){usePrevious=true;const today=getToday();$('#compare-a').value=today;$('#compare-b').value=previousAnchor($('#compare-frequency').value,today);$('#compare-a').max=today;$('#compare-b').max=today;render();}
  function render(){
+  weekly.cancel();if($('#comparison').hidden)return;
   if(!$('#compare-a').value){$('#compare-error').textContent='Choose a date for period A.';$('#compare-error').hidden=false;$('#compare-chart').replaceChildren();$('#compare-summary').replaceChildren();$('#compare-legend').replaceChildren();state=null;$('#compare-download').disabled=true;return;}
   const frequency=$('#compare-frequency').value,two=$('#compare-mode').value==='two',variables=[$('#compare-variable-a').value,$('#compare-variable-b').value].filter((v,i,a)=>v!=='none'&&a.indexOf(v)===i).map(k=>VARIABLES.find(v=>v.key===k));
-  $('#compare-b-group').hidden=!two;$('#compare-swap').hidden=!two;$('#compare-previous').hidden=!two;
+  const clockWeek=frequency==='week';
+  $('#compare-mode-group').hidden=clockWeek;$('#compare-b-group').hidden=clockWeek||!two;$('#compare-swap').hidden=clockWeek||!two;$('#compare-previous').hidden=!clockWeek&&!two;
+  $('#compare-previous').textContent=clockWeek?'Previous week':'Use previous period';
+  $('#compare-a-label').textContent=clockWeek?'Week ending · choose a date':'Period A · choose a date';
+  $('#compare-badge').textContent=clockWeek?'7 DAYS · 24 HOURS':'A ━   B ┄';
+  for(const id of ['#compare-variable-a','#compare-variable-b'])for(const variable of VARIABLES){const option=[...$(id).options].find(o=>o.value===variable.key);if(option)option.textContent=clockWeek?weeklyVariable(variable).label:variable.label;}
   const error=$('#compare-error');error.hidden=true;
   try{
+   if(clockWeek){state=null;weekly.render($('#compare-a').value,variables).catch(e=>{if($('#compare-frequency').value==='week'&&!$('#comparison').hidden){error.hidden=false;error.textContent=e.message;}});return;}
    const slots=comparisonSlots(frequency),periods=[{id:'A',anchor:$('#compare-a').value},...(two?[{id:'B',anchor:$('#compare-b').value}]:[])].map(p=>({...p,window:periodWindow(frequency,p.anchor),points:alignPeriod(getRows(),frequency,p.anchor,slots)}));
    state={slots,periods,variables,frequency};
    $('#compare-a-range').textContent=windowText(periods[0].window);$('#compare-b-range').textContent=two?windowText(periods[1].window):'';

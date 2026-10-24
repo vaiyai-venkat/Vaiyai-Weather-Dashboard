@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {VARIABLES} from '../dist/comparison.mjs';
+import {stationClock,weeklyDates,prepareWeeklyDay,weeklyVariable,valueFor,weeklySummary,weeklyPath,weeklyCSV,nearestWeeklyPoint} from '../dist/weekly.mjs';
+const temp=weeklyVariable(VARIABLES.find(v=>v.key==='temp_avg')),rain=weeklyVariable(VARIABLES.find(v=>v.key==='rain_total'));
+assert.deepEqual(stationClock('2026-10-23T18:30:00Z','Asia/Kolkata'),{date:'2026-10-24',time:'00:00:00',minute:0});
+assert.equal(stationClock('2026-10-24T18:29:00Z','Asia/Kolkata').minute,1439);
+assert.equal(stationClock('2026-10-24T18:30:00Z','Asia/Kolkata').date,'2026-10-25');
+assert.equal(stationClock('bad','Asia/Kolkata'),null);
+assert.deepEqual(weeklyDates('2026-01-03'),['2025-12-28','2025-12-29','2025-12-30','2025-12-31','2026-01-01','2026-01-02','2026-01-03']);
+const raw=[{time:'2026-10-23T18:30:00Z',temp:27,rain_total:1},{time:'2026-10-23T18:35:00Z',temp:28,rain_total:2},{time:'2026-10-24T18:30:00Z',temp:99,rain_total:99}];
+const day=prepareWeeklyDay('2026-10-24',raw,'Asia/Kolkata');assert.equal(day.points.length,2);assert.equal(day.points[0].minute,0);assert.equal(day.points[1].minute,5);assert.equal(day.points[0].time,'00:00:00');assert.equal(weeklySummary(day,rain).value,2);assert.equal(weeklySummary(day,temp).value,27.5);
+assert.equal(valueFor({temp:null},temp),null);assert.equal(weeklyVariable(VARIABLES.find(v=>v.key==='pressure_mid')).label,'Pressure · interval range midpoint');
+const gap={points:[{minute:0,temp:27},{minute:5,temp:28},{minute:70,temp:29}]};const path=weeklyPath(gap.points,temp,x=>x,y=>y);assert.equal((path.match(/M/g)||[]).length,2);assert.equal((path.match(/L/g)||[]).length,1);
+assert.equal(nearestWeeklyPoint(day,60),null);assert.equal(nearestWeeklyPoint(day,6).minute,5);
+const csv=weeklyCSV([day],[temp,rain]);assert.ok(csv.includes('station_time'));assert.ok(csv.includes('00:00:00'));assert.ok(csv.includes('2026-10-23T18:30:00Z'));assert.equal(csv.split('\r\n').length,3);
+const pressure=weeklyVariable(VARIABLES.find(v=>v.key==='pressure_mid'));assert.equal(valueFor(prepareWeeklyDay('2026-10-24',[{time:'2026-10-23T18:30:00Z',pressure_min:1000,pressure_max:1010}],'Asia/Kolkata').points[0],pressure),1005);
+console.log('Weekly clock checks passed: station midnight, day boundaries, gap breaks, interval mapping, accumulation and CSV.');

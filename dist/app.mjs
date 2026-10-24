@@ -1,10 +1,11 @@
 import {finite,mean,sum,extreme,circularMean,compass,dateAdd,rangeFor,fillDays,rainSum,roseBins} from './analytics.mjs';
-import {demoData} from './demo.mjs';
+import {demoData,demoIntradayForDay} from './demo.mjs?v=20261024-five-minute-weekly';
 import {enrichDaily,enrichInterval} from './comparison.mjs';
-import {setupComparison} from './compare-ui.mjs?v=20261024-readable-pages';
+import {setupComparison} from './compare-ui.mjs?v=20261024-five-minute-weekly';
 import {setupPageViews} from './pages.mjs';
 const $=s=>document.querySelector(s),text=(s,v)=>{$(s).textContent=v;};
-let manifest=null,rows=[],selected=[],chartRows=[],range={},demo=false,loadVersion=0,intervalCache=new Map(),intervalLoading=new Set(),comparisonUI=null,pageUI=null;
+let manifest=null,rows=[],selected=[],chartRows=[],range={},demo=false,loadVersion=0,intervalCache=new Map(),intervalLoading=new Set(),comparisonUI=null,pageUI=null,refreshing=false,lastPageCheck=null;
+const intervalRequests=new Map();
 const NS='http://www.w3.org/2000/svg';
 function svg(tag,attrs={},content){const n=document.createElementNS(NS,tag);for(const [k,v]of Object.entries(attrs))n.setAttribute(k,String(v));if(content!=null)n.textContent=content;return n;}
 function append(parent,tag,attrs,content){const n=svg(tag,attrs,content);parent.append(n);return n;}
@@ -14,7 +15,7 @@ const stationToday=()=>new Date().toLocaleDateString('en-CA',{timeZone:manifest?
 function clear(el){el.replaceChildren();}
 function el(tag,cls,value){const n=document.createElement(tag);if(cls)n.className=cls;if(value!=null)n.textContent=value;return n;}
 function currentText(id,value,unit='',digits=1){const n=$(id);clear(n);n.append(document.createTextNode(fmt(value,digits)));if(unit)n.append(el('small','',unit));}
-async function json(url){const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw Error(`Could not load ${url} (HTTP ${r.status}).`);return r.json();}
+async function json(url){const r=await fetch(url+(url.includes('?')?'&':'?')+'_='+Date.now(),{cache:'no-store'});if(!r.ok)throw Error(`Could not load ${url} (HTTP ${r.status}).`);return r.json();}
 function notify(message,link='Connection guide',href='#setup'){
  const n=$('#notice');clear(n);n.hidden=!message;if(!message)return;n.append(el('span','',message));const a=el('a','',link);a.href=href;n.append(a);
 }
@@ -25,7 +26,7 @@ async function load(useDemo=false){
   if(useDemo){({manifest:m,rows:r}=demoData());}
   else{m=await json('data/manifest.json');const chunks=await Promise.all((m.months||[]).map(month=>json(`data/history/${month}.json`)));r=chunks.flat().filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d.date));}
   if(version!==loadVersion)return;
-  manifest=m;intervalCache.clear();intervalLoading.clear();rows=[...new Map(r.map(d=>[d.date,enrichDaily(d)])).values()].sort((a,b)=>a.date.localeCompare(b.date));demo=useDemo;
+  manifest=m;intervalCache.clear();intervalLoading.clear();intervalRequests.clear();lastPageCheck=new Date();rows=[...new Map(r.map(d=>[d.date,enrichDaily(d)])).values()].sort((a,b)=>a.date.localeCompare(b.date));demo=useDemo;
   const params=new URLSearchParams(location.search);if(demo)params.set('demo','1');else params.delete('demo');history.replaceState(null,'',location.pathname+(params.size?'?'+params:'')+location.hash);
   text('#station-name',m.station.name);text('#location',`${m.station.location} · ${m.station.latitude}°N, ${m.station.longitude}°E`);
   const today=stationToday();['#anchor','#start','#end'].forEach(id=>{$(id).max=today;});
@@ -39,20 +40,47 @@ async function load(useDemo=false){
   else notify('');
  }catch(error){if(version!==loadVersion)return;$('#error').hidden=false;text('#error',error.message+' Refresh the page or check the published data files.');text('#connection','Data unavailable');}
 }
+function localStamp(value){return value?new Date(value).toLocaleString('en-GB',{timeZone:manifest?.station?.timezone||'Asia/Kolkata',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'})+' IST':'unavailable';}
+function updateRefreshStatus(){
+ text('#collection-status',demo?'Sample data · no live collection':'Collected '+localStamp(manifest.collection_finished_at||manifest.updated_at)+(manifest.refresh_target_minutes?' · '+manifest.refresh_target_minutes+'-min target':''));
+ text('#refresh-status',demo?'Illustrative preview · live refresh disabled':'Page checked '+localStamp(lastPageCheck?.toISOString())+' · checks every 60s');
+ $('#refresh-now').disabled=demo||refreshing;
+}
+async function loadIntervalDay(day){
+ if(demo)return demoIntradayForDay(day,stationToday(),rows.find(r=>r.date===day));
+ const current=(manifest.intraday||[]).filter(p=>p.date===day);if(current.length)return current;
+ if(intervalCache.has(day))return intervalCache.get(day);
+ if(!(manifest.intraday_dates||[]).includes(day))return [];
+ if(intervalRequests.has(day))return intervalRequests.get(day);
+ const request=json(`data/intraday/${day}.json`).then(points=>{intervalCache.set(day,points);return points;}).finally(()=>intervalRequests.delete(day));intervalRequests.set(day,request);return request;
+}
+async function refreshArchive(force=false){
+ if(demo||!manifest||refreshing)return;
+ refreshing=true;$('#refresh-now').disabled=true;text('#refresh-status','Checking published observations…');
+ try{
+  const m=await json('data/manifest.json');
+  const changed=force||m.last_attempt_at!==manifest.last_attempt_at||m.current?.time!==manifest.current?.time||m.updated_at!==manifest.updated_at;
+  if(changed){const data=(await Promise.all((m.months||[]).map(month=>json(`data/history/${month}.json`)))).flat();manifest=m;rows=data.map(enrichDaily).sort((a,b)=>a.date.localeCompare(b.date));intervalCache.clear();intervalRequests.clear();render();}
+  lastPageCheck=new Date();renderCurrent();
+  if(m.status?.state==='error')notify('Collection issue · '+m.status.message);else if(m.status?.state==='ok')notify(m.backfill?.remaining_days?`History is filling in · ${m.backfill.remaining_days} dates still to check.`:'');
+ }catch{notify('Could not refresh the archive. Displaying the last loaded observations.');text('#refresh-status','Refresh failed · last loaded observations retained');}
+ finally{refreshing=false;$('#refresh-now').disabled=false;}
+}
 function renderCurrent(){
  const m=manifest,c=m.current,age=c?.time?(Date.now()-new Date(c.time))/60000:Infinity;
- const fresh=age>=-5&&age<=90;
+ const fresh=age>=-5&&age<=15;
  text('#connection',demo?'Illustrative data':m.status?.state==='error'?'Collection issue':c?(fresh?'Station reporting':'Observation stale'):m.status?.state==='unconfigured'?'API key not configured':m.status?.state==='no_data'?'No station data returned':'Awaiting observations');
  $('#connection').style.color=demo?'var(--gold)':fresh?'var(--cyan)':'var(--orange)';
- text('#updated',c?.time?new Date(c.time).toLocaleString('en-GB',{timeZone:m.station.timezone,day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})+' IST · '+(demo?'sample':'observation'):'All dates and times in IST');
+ text('#updated',c?.time?new Date(c.time).toLocaleString('en-GB',{timeZone:m.station.timezone,day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})+' IST · '+(demo?'sample':Math.max(0,Math.floor(age))+' min ago'):'All dates and times in IST');
  text('#current-label',demo?'ILLUSTRATIVE CURRENT CONDITIONS':fresh?'LATEST OBSERVATION':'LAST AVAILABLE OBSERVATION');
  text('#current-temp',fmt(c?.temp));
- text('#condition-text',c?(!fresh&&!demo?'Station observation is older than 90 minutes':finite(c.temp)&&finite(c.humidity)?`${c.temp>=30?'Warm':c.temp>=24?'Mild':'Cool'}${c.humidity>=75?' & humid':' local conditions'}`:'Latest available station readings'):'Connect your station to see current conditions');
+ text('#condition-text',c?(!fresh&&!demo?'Station observation is older than 15 minutes':finite(c.temp)&&finite(c.humidity)?`${c.temp>=30?'Warm':c.temp>=24?'Mild':'Cool'}${c.humidity>=75?' & humid':' local conditions'}`:'Latest available station readings'):'Connect your station to see current conditions');
  text('#current-dew',fmt(c?.dew)+' °C');text('#current-pressure',fmt(c?.pressure)+' hPa');
  currentText('#current-humidity',c?.humidity,'%',0);currentText('#current-rain',c?.rain_total,'mm');
  text('#current-rate','Rate '+fmt(c?.rain_rate)+' mm/h');
  currentText('#current-solar',c?.solar,'W/m²',0);currentText('#current-uv',c?.uv,'');
  currentText('#current-wind',c?.wind,'km/h');text('#current-gust','Gust '+fmt(c?.gust)+' km/h');
+ updateRefreshStatus();
  text('#current-direction',compass(c?.wind_dir));$('#needle').style.transform=`rotate(${finite(c?.wind_dir)?c.wind_dir:0}deg)`;$('#needle').style.opacity=finite(c?.wind_dir)?1:.15;
 }
 function render(){
@@ -181,11 +209,14 @@ $('#demo-button').onclick=()=>load(true);$('#live-button').onclick=()=>load(fals
 $('#download').onclick=()=>{const fields=['date','temp_min','temp_max','temp_avg','humidity_min','humidity_max','humidity_avg','rain_total','rain_rate_max','wind_min','wind_max','wind_avg','gust_min','gust_max','gust_avg','wind_dir','solar_max','uv_max','dew_min','dew_max','dew_avg','pressure_min','pressure_max','pressure_mid'];const headers=['date_IST','temperature_min_C','temperature_max_C','temperature_mean_C','humidity_min_percent','humidity_max_percent','humidity_mean_percent','rain_total_mm','rain_rate_peak_mmh','wind_min_kmh','wind_max_kmh','wind_mean_kmh','gust_min_kmh','gust_max_kmh','gust_mean_kmh','wind_from_degrees','solar_peak_W_m2','UV_peak','dew_min_C','dew_max_C','dew_mean_C','pressure_min_hPa','pressure_max_hPa','pressure_range_midpoint_hPa'];const content=[headers.join(','),...selected.map(r=>fields.map(k=>r[k]??'').join(','))].join('\r\n');const url=URL.createObjectURL(new Blob(['\uFEFF'+content],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download=`${demo?'DEMO_':''}IPAPAN3_${range.start}_${range.end}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);};
 try{if(localStorage.getItem('ipapan3-theme')==='light')document.body.classList.add('light');}catch{}
 $('#theme').onclick=()=>{document.body.classList.toggle('light');try{localStorage.setItem('ipapan3-theme',document.body.classList.contains('light')?'light':'dark');}catch{}};
-comparisonUI=setupComparison({getRows:()=>rows,getToday:stationToday,getDemo:()=>demo});
+comparisonUI=setupComparison({getRows:()=>rows,getToday:stationToday,getDemo:()=>demo,getTimeZone:()=>manifest?.station?.timezone||'Asia/Kolkata',getIntraday:loadIntervalDay});
 pageUI=setupPageViews({onChange:()=>{if(manifest)render();},getStationTitle:()=>`${manifest?.station?.name||'Vaiyaicheri'} Weather — IPAPAN3`});
 await load(new URLSearchParams(location.search).get('demo')==='1');
 pageUI.refresh();
 let chartResizeTimer;
 addEventListener('resize',()=>{clearTimeout(chartResizeTimer);chartResizeTimer=setTimeout(()=>{if(manifest)render();},160);});
-// Refresh data snapshots without reloading the page or resetting the selected range.
-setInterval(async()=>{if(demo||document.hidden||!manifest)return;try{const m=await json('data/manifest.json');if(m.last_attempt_at!==manifest.last_attempt_at){const r=(await Promise.all((m.months||[]).map(month=>json(`data/history/${month}.json`)))).flat();manifest=m;rows=r.map(enrichDaily).sort((a,b)=>a.date.localeCompare(b.date));renderCurrent();render();if(m.status?.state==='error')notify('Collection issue · '+m.status.message);else if(m.status?.state==='ok')notify(m.backfill?.remaining_days?`History is filling in · ${m.backfill.remaining_days} dates still to check.`:'');}}catch{notify('Could not refresh the archive. Displaying the last loaded observations.');}},300000);
+// Poll only our published files. API credentials remain in GitHub Actions.
+setInterval(()=>{if(!document.hidden)refreshArchive();},60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshArchive();});
+addEventListener('focus',()=>refreshArchive());
+$('#refresh-now').onclick=()=>refreshArchive(true);

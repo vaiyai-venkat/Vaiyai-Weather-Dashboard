@@ -82,7 +82,10 @@ def point_record(raw, timezone, current=False):
         'temp_min': number(m.get('temp' if current else 'tempLow')),
         'temp_max': number(m.get('temp' if current else 'tempHigh')),
         'humidity': number(raw.get('humidity' if current else 'humidityAvg')),
+        'humidity_min': number(raw.get('humidity' if current else 'humidityLow')),
+        'humidity_max': number(raw.get('humidity' if current else 'humidityHigh')),
         'wind': number(m.get('windSpeed' if current else 'windspeedAvg')),
+        'wind_max': number(m.get('windSpeed' if current else 'windspeedHigh')),
         'gust': number(m.get('windGust' if current else 'windgustHigh')),
         'wind_dir': direction(raw.get('winddir' if current else 'winddirAvg')),
         'solar': number(raw.get('solarRadiation' if current else 'solarRadiationHigh')),
@@ -172,7 +175,7 @@ class Client:
         return []
 
 
-def collect(start_date=None, max_backfill=None):
+def collect(start_date=None, max_backfill=None, scheduled=False, recent_week=False):
     config = json.loads((ROOT / 'config.json').read_text())
     now = dt.datetime.now(dt.timezone.utc)
     today = now.astimezone(ZoneInfo(config['timezone'])).date()
@@ -196,6 +199,17 @@ def collect(start_date=None, max_backfill=None):
     manifest = {**old, 'schema_version': 1, 'collector_version': QC_FILTER_VERSION,
                 'station': station, 'last_attempt_at': now.isoformat(),
                 'rain_day_threshold_mm': config.get('rain_day_threshold_mm', 0.2)}
+    manifest.update(collector_release='2026-10-24-five-minute-weekly', refresh_target_minutes=5)
+    last_history = state.get('last_history_success_at')
+    try:
+        previous_history = dt.datetime.fromisoformat(last_history) if last_history else None
+        if previous_history is not None and previous_history.tzinfo is None:
+            previous_history = previous_history.replace(tzinfo=dt.timezone.utc)
+        history_age = (now - previous_history).total_seconds() / 60 if previous_history else float('inf')
+    except (TypeError, ValueError):
+        history_age = float('inf')
+    history_due = not scheduled or history_age >= config.get('history_refresh_minutes', 60)
+    history_success = False
     key = os.environ.get('WU_API_KEY', '').strip()
     if not key:
         manifest['status'] = {'state': 'unconfigured', 'message': 'Add WU_API_KEY to the repository Actions secrets to connect station observations.'}
@@ -218,15 +232,28 @@ def collect(start_date=None, max_backfill=None):
         if manifest['intraday']:
             write_json(DATA / 'intraday' / f'{today.isoformat()}.json', manifest['intraday'])
             interval_dates.add(today.isoformat())
-        # Refresh today and yesterday, then fill older history sequentially.
-        dates = {today, today - dt.timedelta(days=1)}
-        limit = max_backfill if max_backfill is not None else config.get('backfill_days_per_run', 7)
-        cursor, added = target_start, 0
-        while cursor < today and added < limit:
-            if cursor.isoformat() not in checked and cursor not in dates:
-                dates.add(cursor)
-                added += 1
-            cursor += dt.timedelta(days=1)
+        # Every run refreshes current conditions, today's intervals and daily summary.
+        # Historical backfill is throttled independently so a 5-minute schedule does
+        # not repeat a large historical batch at every tick.
+        dates = {today}
+        if history_due:
+            dates.add(today - dt.timedelta(days=1))
+            if recent_week:
+                upgrade = state.get('intraday_schema_version', 1) < 2
+                for offset in range(1, 7):
+                    day = today - dt.timedelta(days=offset)
+                    path = DATA / 'intraday' / f'{day.isoformat()}.json'
+                    if day >= target_start and (upgrade or not path.exists() or day.isoformat() not in rows):
+                        dates.add(day)
+            limit = max_backfill if max_backfill is not None else config.get('backfill_days_per_run', 7)
+            cursor, added = target_start, 0
+            while cursor < today and added < limit:
+                if cursor.isoformat() not in checked and cursor not in dates:
+                    dates.add(cursor)
+                    added += 1
+                cursor += dt.timedelta(days=1)
+        else:
+            print(f'Live refresh only: historical collection last completed {history_age:.1f} minutes ago.')
         for date in sorted(dates, reverse=True):
             if date < target_start:
                 continue
@@ -246,7 +273,9 @@ def collect(start_date=None, max_backfill=None):
                 touched.add(day[:7])
             # Empty historical days are remembered, not filled with invented readings.
             checked.add(day)
+        history_success = history_due
         manifest['updated_at'] = now.isoformat()
+        manifest['collection_finished_at'] = dt.datetime.now(dt.timezone.utc).isoformat()
         manifest['mode'] = 'live'
         manifest['status'] = {'state': 'ok' if rows or manifest.get('current') else 'no_data', 'message': 'Station observations collected successfully.' if rows or manifest.get('current') else 'No usable observations were saved. See API response counts in diagnostics and the collection log.'}
     except APIError as error:
@@ -263,7 +292,9 @@ def collect(start_date=None, max_backfill=None):
                     history_days=len(rows), intraday_dates=sorted(interval_dates),
                     diagnostics=client.diagnostics)
     write_json(DATA / 'collector-state.json', {'checked_dates': sorted(checked),
-                                             'qc_filter_version': QC_FILTER_VERSION})
+                                             'qc_filter_version': QC_FILTER_VERSION,
+                                             'last_history_success_at': now.isoformat() if history_success else last_history,
+                                             'intraday_schema_version': 2 if history_success and recent_week else state.get('intraday_schema_version', 1)})
     write_json(DATA / 'manifest.json', manifest)
     print(f'Station {config["station_id"]}: {len(rows)} observed days; {client.requests} API requests; {len(all_dates - checked)} days pending.')
     for error in errors:
@@ -275,11 +306,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--start-date', help='Earliest requested station-local date, YYYY-MM-DD. Saved in config/variable for regular runs.')
     parser.add_argument('--max-backfill', type=int, help='Extra historical days in this run (0–366).')
+    parser.add_argument('--scheduled', action='store_true', help='Refresh live readings now; throttle historical batches to roughly hourly.')
+    parser.add_argument('--recent-week', action='store_true', help='Ensure recent seven-day interval archives during a historical batch.')
     args = parser.parse_args()
     if args.max_backfill is not None and not 0 <= args.max_backfill <= 366:
         parser.error('--max-backfill must be between 0 and 366')
     try:
-        sys.exit(collect(args.start_date, args.max_backfill))
+        sys.exit(collect(args.start_date, args.max_backfill, args.scheduled, args.recent_week))
     except (ValueError, KeyError) as error:
         print(f'Configuration error: {error}')
         sys.exit(1)

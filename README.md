@@ -9,7 +9,7 @@ A responsive, static HTML weather dashboard for the IPAPAN3 Weather Underground 
 - Temperature high/low/mean, rainfall totals and accumulation, humidity range, wind and gust, solar and UV charts, and a 16-sector direction rose.
 - Maximum and minimum records with their dates; first occurrence and number of tied dates are shown. Daily means and precipitation totals are included.
 - CSV export of the selected period; dark/light themes; mobile layouts; chart tooltips and keyboard arrow navigation.
-- A sequential Python collector, an incremental archive, and a GitHub Actions workflow that collects and deploys approximately every 30 minutes.
+- A sequential Python collector, an incremental archive, and a GitHub Actions workflow that collects and deploys on a five-minute schedule (GitHub scheduling and Pages deployment can add delay).
 
 ## Deploy to GitHub Pages
 
@@ -24,9 +24,9 @@ An API key with **current and historical PWS endpoint access** is required. Avai
 
 ### Backfill the full installation history
 
-Each scheduled run refreshes today and yesterday, then checks up to seven older dates starting from your configured installation date. It also archives reporting intervals for checked dates. A successful no-data date is remembered; it remains a gap rather than zero rainfall.
+Each scheduled run refreshes current conditions and today's intervals/daily summary. Roughly hourly, a full batch also refreshes yesterday, fills missing recent-week interval files and checks up to seven older dates starting from your installation date. Successful no-data dates remain gaps rather than zero rainfall.
 
-For faster initial loading, run the workflow manually with **max_backfill = 60** (or another value within your API quota). This uses approximately `2 × max_backfill + 4` requests. The default scheduled run uses up to 18 requests during initial backfill and about four after backfill completes. Requests are sequential, paused by one second, with limited retries. Check your own API quota before increasing the batch or frequency. GitHub schedules are approximate and can be delayed; public-repository schedules may be disabled after prolonged repository inactivity.
+For faster initial loading, run the workflow manually with **max_backfill = 60** (or another value within your API quota). A normal full batch uses approximately `2 × max_backfill + 5` requests, with up to ten extra requests when warming the recent-week archive. Normal quick scheduled ticks use three requests. Requests are sequential, paused by one second, with limited retries. Check your own API quota before increasing the batch or frequency. GitHub schedules are approximate and can be delayed; public-repository schedules may be disabled after prolonged repository inactivity.
 
 Set `WU_INSTALLATION_DATE` persistently for future runs. The optional workflow `start_date` input overrides only that run. To recheck historical gaps after the provider restores data, remove the relevant dates from `dist/data/collector-state.json` and rerun. An installation date cannot recover records the provider no longer serves.
 
@@ -124,11 +124,11 @@ Atmospheric pressure has a dedicated chart in hPa, an overview summary card, dat
 
 Open **Compare** to choose:
 
-- Weekly: seven-day windows ending on the selected dates, aligned by day 1–7.
+- Weekly: seven daily reporting-interval curves on a shared 00:00–24:00 station-time axis; select the week-ending date.
 - Monthly: full calendar months, aligned by day of month. Short months retain empty slots.
 - Yearly: full calendar years, aligned by month/day. February 29 remains empty for non-leap years.
 - One or two measurements from the variable dropdowns, including temperature, dew point, rainfall, peak rain rate, humidity, wind/gust/direction, solar, UV and pressure.
-- One period for comparing variables, or two periods for comparing weather across dates. Period A is solid and period B dashed. Variables have labeled left/right axes; variables using the same units share one numeric scale.
+- One period for comparing variables, or two periods for comparing weather across dates. For monthly/yearly comparisons, period A is solid and period B dashed. Weekly comparisons use one colour per date; an optional second variable is dashed. Variables have labeled left/right axes; variables using the same units share one numeric scale.
 
 Comparison dates are independent of the overview filter. By default, period B follows the previous period; picking B manually preserves that choice when other controls change. **Use previous period** restores automatic B selection. **Swap A / B** reverses the chosen periods. Daily rainfall summary values are totals; the other numeric summaries are means of the selected daily metric. Direction summaries use circular means and chart lines break at north. Missing and future dates remain gaps rather than zeroes. Export comparison downloads the aligned values, actual dates and units as CSV.
 
@@ -138,7 +138,7 @@ Additional checks:
 node tests/comparison.test.mjs
 ```
 
-This update preserves the previous QC filter fix, API credentials, collection schedule and observation archive.
+This update preserves the previous QC filter fix, API credentials and observation archive.
 
 
 ## Larger type and separate views (24 October 2026)
@@ -155,3 +155,26 @@ Navigation behaves like separate pages while remaining compatible with a static 
 Only one view is visible. The same date-control instance moves between Overview, Weather Trends and Records, preserving selected dates and ranges. Comparison choices are independent and remain selected when moving between views. Browser Back and Forward work. Old chart links such as `#pressure-chart` open Weather Trends and reveal the requested chart. Summary cards also open the correct chart view.
 
 The view change does not reload observations or reset the API key or installation date. The existing periodic refresh and GitHub Actions collection continue normally.
+
+
+## Five-minute collection and weekly clock overlay (24 October 2026)
+
+The GitHub workflow requests collection every five minutes at minutes 2, 7, 12, 17, …, 57 (`2-59/5 * * * *`). This replaces the earlier half-hourly collector schedule. The page checks the published JSON every 60 seconds, checks again when the tab becomes visible, and offers **Refresh now**. JSON requests use a fresh query value to avoid serving an old browser/CDN response.
+
+GitHub schedules are best effort, and Pages deployment takes additional time; this is not a guaranteed real-time stream. The header shows the actual station observation time and age, last successful collection time and last page check separately. Observations older than 15 minutes are marked stale. Refresh now reads the published archive; it does not expose your API key or start a new private API collection.
+
+Scheduled runs normally make three Weather Company API requests: current conditions, today's reporting intervals and today's daily summary. Historical backfill is performed roughly hourly, controlled by the optional `history_refresh_minutes` setting (default 60). Push/manual runs perform a full batch. The `--recent-week` workflow flag also fills or upgrades the recent seven days of interval archives during a full batch so the weekly plot can show those dates.
+
+A regular full batch with seven backfill dates uses about 19 API requests; the first recent-week warm-up can use about 29. Once historical backfill is complete, a full batch uses about five. At the default cadence this is roughly 900–1,250 requests/day plus warm-up, manual runs and retries. Check the allowance of your own API plan before increasing batches or frequency.
+
+In **Compare → Weekly**, the X axis is 00:00 through 24:00 in the configured station timezone (Asia/Kolkata for IPAPAN3). The seven dates ending on the chosen date are drawn together, each in a different colour. The period-B controls are hidden for this view. Optional second-variable curves use dashed lines and a labeled second axis. Today stops at its latest archived sample; missing dates stay absent and gaps longer than 30 minutes break the lines. Interval peaks are labeled as interval peaks, rather than daily means. Rainfall accumulation uses the reported counter and is not summed over time samples.
+
+Monthly and yearly comparisons retain their calendar-day alignment and period-A/period-B controls. Weekly CSV export includes station date, exact station clock time, UTC observation timestamp and chosen interval values. Monthly/yearly exports retain their previous aligned format.
+
+Additional checks:
+
+```bash
+node tests/weekly.test.mjs
+```
+
+Official scheduling reference: https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule
