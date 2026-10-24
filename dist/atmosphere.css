@@ -1,0 +1,27 @@
+/* Keep atmospheric motion behind opaque reading cards. */
+#weather-background{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;opacity:.16;transition:opacity 1s}
+#weather-background svg{width:100%;height:100%;filter:blur(1px)}
+body>.topbar,body>main{position:relative;z-index:1}body>.skip{z-index:2}body>#tooltip{z-index:20}
+.atmosphere-controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding:15px 18px;margin:-4px 0 24px;border:1px solid var(--line);border-radius:14px;background:var(--card,#111d29)}
+.atmosphere-intro{display:flex;align-items:center;gap:10px;flex:1;min-width:210px}
+.atmosphere-intro img{width:37px;height:37px}.atmosphere-intro strong{font-size:16px;display:block}.atmosphere-intro small{font-size:14px;color:var(--muted);display:block;line-height:1.6}
+.atmosphere-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px 14px}.atmosphere-actions .button{font-size:15px;min-height:44px;white-space:nowrap}
+.atmosphere-actions .button[aria-pressed="true"]{border-color:var(--cyan);color:var(--cyan)}
+.weather-volume-label{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted)}
+#weather-volume{width:82px;min-height:40px;accent-color:var(--cyan);padding:0}#weather-volume:disabled{opacity:.45}
+.weather-picture{margin:18px 0 0;border-radius:13px;overflow:hidden;border:1px solid var(--line);background:#112338}
+.weather-visual{aspect-ratio:24/11;overflow:hidden}.weather-visual svg{display:block;width:100%;height:100%}
+.weather-picture figcaption{padding:13px 15px;background:var(--card,#111d29)}
+#weather-scene-label{display:block;font-size:18px;font-weight:750;line-height:1.4;color:var(--text)}
+#weather-scene-detail{display:block;font-size:13px;line-height:1.6;color:var(--muted);margin-top:5px}
+.current-main .temperature{justify-content:flex-start}.current-main .sun-art{display:none}
+.weather-scene-method{font-size:14px;color:var(--muted);line-height:1.7;margin:17px 0 0}.weather-scene-method summary{cursor:pointer;font-weight:650;padding:7px 0}.weather-scene-method p{font-size:14px;margin:7px 0;line-height:1.7}
+.wx-rays{animation:wx-rotate 48s linear infinite;transform-box:fill-box;transform-origin:center}.wx-cloud{animation:wx-drift 12s ease-in-out infinite alternate}.wx-drop{animation:wx-rain 1s linear infinite}.wx-star{animation:wx-twinkle 4s ease-in-out infinite alternate}
+.weather-motion-paused .wx-rays,.weather-motion-paused .wx-cloud,.weather-motion-paused .wx-drop,.weather-motion-paused .wx-star{animation-play-state:paused!important}
+@keyframes wx-rotate{to{transform:rotate(360deg)}}
+@keyframes wx-drift{to{transform:translateX(17px)}}
+@keyframes wx-rain{from{transform:translate(18px,-40px);opacity:0}20%{opacity:.85}to{transform:translate(-24px,110px);opacity:.1}}
+@keyframes wx-twinkle{from{opacity:.25}to{opacity:.95}}
+body.light #weather-background{opacity:.15}body.light .atmosphere-controls,body.light .weather-picture figcaption{background:#fff}
+@media(prefers-reduced-motion:reduce){.wx-rays,.wx-cloud,.wx-drop,.wx-star{animation:none!important}#weather-background{transition:none}}
+@media(max-width:600px){.atmosphere-controls{padding:14px;margin-bottom:20px;gap:13px}.atmosphere-intro{min-width:100%;gap:10px}.atmosphere-intro strong{font-size:16px}.atmosphere-intro small{font-size:13px}.atmosphere-actions{width:100%;gap:10px}.atmosphere-actions .button{font-size:14px;padding:9px 11px}.weather-volume-label{font-size:13px;gap:5px}#weather-volume{width:65px}.weather-picture{margin-top:16px}#weather-scene-label{font-size:18px}#weather-scene-detail{font-size:13px}.weather-scene-method{font-size:14px}}

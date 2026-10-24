@@ -1,9 +1,11 @@
+import {setupAtmosphere} from './atmosphere.mjs?v=20261024-rain-audio-v4';
 import {finite,mean,sum,extreme,circularMean,compass,dateAdd,rangeFor,fillDays,rainSum,roseBins} from './analytics.mjs';
 import {demoData,demoIntradayForDay} from './demo.mjs?v=20261024-five-minute-weekly';
 import {enrichDaily,enrichInterval} from './comparison.mjs';
 import {setupComparison} from './compare-ui.mjs?v=20261024-five-minute-weekly';
 import {setupPageViews} from './pages.mjs';
 const $=s=>document.querySelector(s),text=(s,v)=>{$(s).textContent=v;};
+const atmosphere=setupAtmosphere();
 let manifest=null,rows=[],selected=[],chartRows=[],range={},demo=false,loadVersion=0,intervalCache=new Map(),intervalLoading=new Set(),comparisonUI=null,pageUI=null,refreshing=false,lastPageCheck=null;
 const intervalRequests=new Map();
 const NS='http://www.w3.org/2000/svg';
@@ -17,7 +19,7 @@ function el(tag,cls,value){const n=document.createElement(tag);if(cls)n.classNam
 function currentText(id,value,unit='',digits=1){const n=$(id);clear(n);n.append(document.createTextNode(fmt(value,digits)));if(unit)n.append(el('small','',unit));}
 async function json(url){const r=await fetch(url+(url.includes('?')?'&':'?')+'_='+Date.now(),{cache:'no-store'});if(!r.ok)throw Error(`Could not load ${url} (HTTP ${r.status}).`);return r.json();}
 function notify(message,link='Connection guide',href='#setup'){
- const n=$('#notice');clear(n);n.hidden=!message;if(!message)return;n.append(el('span','',message));const a=el('a','',link);a.href=href;n.append(a);
+ const n=$('#notice');clear(n);n.hidden=!message;if(!message)return;n.append(el('span','',message));const a=el('a','',href==='#setup'?'View station ↗':link);a.href=href==='#setup'?'https://www.wunderground.com/dashboard/pws/IPAPAN3':href;n.append(a);
 }
 async function load(useDemo=false){
  const version=++loadVersion;$('#error').hidden=true;
@@ -67,6 +69,7 @@ async function refreshArchive(force=false){
  finally{refreshing=false;$('#refresh-now').disabled=false;}
 }
 function renderCurrent(){
+ atmosphere.update(manifest.current,manifest.station,demo);
  const m=manifest,c=m.current,age=c?.time?(Date.now()-new Date(c.time))/60000:Infinity;
  const fresh=age>=-5&&age<=15;
  text('#connection',demo?'Illustrative data':m.status?.state==='error'?'Collection issue':c?(fresh?'Station reporting':'Observation stale'):m.status?.state==='unconfigured'?'API key not configured':m.status?.state==='no_data'?'No station data returned':'Awaiting observations');
@@ -205,7 +208,7 @@ function drawChart(type,data,oneDay){
 $('#period').addEventListener('change',render);for(const id of ['#anchor','#start','#end','#rain-mode'])$(id).addEventListener('change',render);
 function movePeriod(step){let d=$('#anchor').value||stationToday(),period=$('#period').value;if(period==='today')d=dateAdd(d,step);else if(period==='week')d=dateAdd(d,7*step);else if(period==='month'){const p=new Date(d+'T12:00:00Z');p.setUTCMonth(p.getUTCMonth()+step+1,0);d=p.toISOString().slice(0,10);}else if(period==='year')d=(+d.slice(0,4)+step)+'-12-31';$('#anchor').value=d>stationToday()?stationToday():d;render();}
 $('#previous').onclick=()=>movePeriod(-1);$('#next').onclick=()=>movePeriod(1);
-$('#demo-button').onclick=()=>load(true);$('#live-button').onclick=()=>load(false);
+$('#demo-button')?.addEventListener('click',()=>load(true));$('#live-button')?.addEventListener('click',()=>load(false));
 $('#download').onclick=()=>{const fields=['date','temp_min','temp_max','temp_avg','humidity_min','humidity_max','humidity_avg','rain_total','rain_rate_max','wind_min','wind_max','wind_avg','gust_min','gust_max','gust_avg','wind_dir','solar_max','uv_max','dew_min','dew_max','dew_avg','pressure_min','pressure_max','pressure_mid'];const headers=['date_IST','temperature_min_C','temperature_max_C','temperature_mean_C','humidity_min_percent','humidity_max_percent','humidity_mean_percent','rain_total_mm','rain_rate_peak_mmh','wind_min_kmh','wind_max_kmh','wind_mean_kmh','gust_min_kmh','gust_max_kmh','gust_mean_kmh','wind_from_degrees','solar_peak_W_m2','UV_peak','dew_min_C','dew_max_C','dew_mean_C','pressure_min_hPa','pressure_max_hPa','pressure_range_midpoint_hPa'];const content=[headers.join(','),...selected.map(r=>fields.map(k=>r[k]??'').join(','))].join('\r\n');const url=URL.createObjectURL(new Blob(['\uFEFF'+content],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download=`${demo?'DEMO_':''}IPAPAN3_${range.start}_${range.end}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);};
 try{if(localStorage.getItem('ipapan3-theme')==='light')document.body.classList.add('light');}catch{}
 $('#theme').onclick=()=>{document.body.classList.toggle('light');try{localStorage.setItem('ipapan3-theme',document.body.classList.contains('light')?'light':'dark');}catch{}};
