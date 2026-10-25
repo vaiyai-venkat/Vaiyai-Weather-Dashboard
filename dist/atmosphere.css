@@ -16,10 +16,10 @@ body>.topbar,body>main{position:relative;z-index:1}body>.skip{z-index:2}body>#to
 #weather-scene-detail{display:block;font-size:13px;line-height:1.6;color:var(--muted);margin-top:5px}
 .current-main .temperature{justify-content:flex-start}.current-main .sun-art{display:none}
 .weather-scene-method{font-size:14px;color:var(--muted);line-height:1.7;margin:17px 0 0}.weather-scene-method summary{cursor:pointer;font-weight:650;padding:7px 0}.weather-scene-method p{font-size:14px;margin:7px 0;line-height:1.7}
-.wx-rays{animation:wx-rotate 48s linear infinite;transform-box:fill-box;transform-origin:center}.wx-cloud{animation:wx-drift 12s ease-in-out infinite alternate}.wx-drop{animation:wx-rain 1s linear infinite}.wx-star{animation:wx-twinkle 4s ease-in-out infinite alternate}
+.wx-rays{animation:wx-rotate 48s linear infinite;transform-box:fill-box;transform-origin:center}.wx-cloud{animation:wx-drift 26s ease-in-out infinite alternate;animation-delay:-9s}.wx-drop{animation:wx-rain 1s linear infinite}.wx-star{animation:wx-twinkle 4s ease-in-out infinite alternate}
 .weather-motion-paused .wx-rays,.weather-motion-paused .wx-cloud,.weather-motion-paused .wx-drop,.weather-motion-paused .wx-star{animation-play-state:paused!important}
 @keyframes wx-rotate{to{transform:rotate(360deg)}}
-@keyframes wx-drift{to{transform:translateX(17px)}}
+@keyframes wx-drift{from{transform:translateX(-24px)}to{transform:translateX(28px)}}
 @keyframes wx-rain{from{transform:translate(18px,-40px);opacity:0}20%{opacity:.85}to{transform:translate(-24px,110px);opacity:.1}}
 @keyframes wx-twinkle{from{opacity:.25}to{opacity:.95}}
 body.light #weather-background{opacity:.15}body.light .atmosphere-controls,body.light .weather-picture figcaption{background:#fff}
@@ -55,3 +55,18 @@ body.light #weather-background{opacity:.15}body.light .atmosphere-controls,body.
 @keyframes wx-strike{0%{opacity:0}24%{opacity:.8}100%{opacity:0}}
 .weather-motion-paused .wx-stratus,.weather-motion-paused .wx-meteor,.weather-motion-paused .wx-lightning{animation-play-state:paused!important}
 @media(prefers-reduced-motion:reduce){.wx-stratus,.wx-meteor,.wx-lightning{animation:none!important}.wx-meteor,.wx-lightning{display:none}}
+
+/* Every cloud scene has visible drift; stratus depths move independently. */
+.wx-stratus-far{animation:wx-stratus-far 46s ease-in-out infinite alternate;animation-delay:-17s}
+.wx-stratus-mid{animation:wx-stratus-mid 34s ease-in-out infinite alternate;animation-delay:-23s}
+.wx-stratus-near{animation:wx-stratus-near 25s ease-in-out infinite alternate;animation-delay:-7s}
+@keyframes wx-stratus-far{from{transform:translateX(-20px)}to{transform:translateX(20px)}}
+@keyframes wx-stratus-mid{from{transform:translateX(30px)}to{transform:translateX(-30px)}}
+@keyframes wx-stratus-near{from{transform:translateX(-40px)}to{transform:translateX(40px)}}
+@media(prefers-reduced-motion:reduce){.wx-stratus-far,.wx-stratus-mid,.wx-stratus-near{animation:none!important}}
+
+/* Warm, golden sunshine with a slow, gentle halo pulse. */
+.wx-sun-glow{animation:wx-sun-glow 7s ease-in-out infinite alternate;transform-box:fill-box;transform-origin:center}
+@keyframes wx-sun-glow{from{opacity:.72;transform:scale(.94)}to{opacity:1;transform:scale(1.05)}}
+.weather-motion-paused .wx-sun-glow{animation-play-state:paused!important}
+@media(prefers-reduced-motion:reduce){.wx-sun-glow{animation:none!important}}

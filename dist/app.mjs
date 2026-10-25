@@ -1,4 +1,4 @@
-import {setupAtmosphere} from './atmosphere.mjs?v=20261025-rain-night-v9';
+import {setupAtmosphere} from './atmosphere.mjs?v=20261025-volume-100-v13';
 import {finite,mean,sum,extreme,circularMean,compass,dateAdd,rangeFor,fillDays,rainSum,roseBins} from './analytics.mjs';
 import {demoData,demoIntradayForDay} from './demo.mjs?v=20261024-five-minute-weekly';
 import {enrichDaily,enrichInterval} from './comparison.mjs';
