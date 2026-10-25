@@ -5,10 +5,10 @@ const number = n => typeof n === 'number' && Number.isFinite(n);
 export const SCENES = Object.freeze({
   sunny: {label:'Sunny sky', sound:'Soft breeze & birds', top:'#143d60', bottom:'#e9ad62'},
   night: {label:'Night sky', sound:'Quiet night & crickets', top:'#09132f', bottom:'#354b78'},
-  cloudy: {label:'Cloudy sky', sound:'Gentle wind', top:'#24364d', bottom:'#8296a2'},
-  light: {label:'Light rain', sound:'Very light rain', top:'#1c344c', bottom:'#607d8c'},
+  cloudy: {label:'Cloudy sky', sound:'Distant birds & soft foliage', top:'#24364d', bottom:'#8296a2'},
+  light: {label:'Light rain · stratiform drizzle', sound:'Very light rain', top:'#1c344c', bottom:'#607d8c'},
   heavy: {label:'Moderate to heavy rain', sound:'Steady rainfall', top:'#152337', bottom:'#435c71'},
-  extreme: {label:'Very heavy to extreme rain', sound:'Intense rain & illustrative distant thunder', top:'#101c30', bottom:'#354558'},
+  extreme: {label:'Very heavy to extreme rain', sound:'Intense rain & synchronized illustrative thunder', top:'#101c30', bottom:'#354558'},
   unknown: {label:'Waiting for observations', sound:'Sound paused', top:'#172b3e', bottom:'#37485d'}
 });
 
@@ -58,18 +58,23 @@ export function sceneSVG(key, id='scene') {
   const rain=['light','heavy','extreme'].includes(key), night=key==='night';
   const clouds=['cloudy','light','heavy','extreme','unknown'].includes(key);
   const stars=night?Array.from({length:22},(_,i)=>`<circle class="wx-star" cx="${18+i*41%460}" cy="${14+i*29%100}" r="${i%3===0?1.6:1}" style="animation-delay:-${i%5}s" fill="#dcecff"/>`).join(''):'';
+  const meteors=night?Array.from({length:3},(_,i)=>`<g transform="translate(${70+i*90} ${18+i*9})"><g class="wx-meteor" style="animation-delay:${18+i*1.3}s"><path d="M0 0l-45-21" stroke="url(#${id}-meteor)" stroke-width="1.6" stroke-linecap="round"/><circle r="1.2" fill="#f0f7ff"/></g></g>`).join(''):'';
   const rays=Array.from({length:12},(_,i)=>`<path d="M0 -38v-10" transform="rotate(${i*30})"/>`).join('');
   const sun=!clouds&&!night?`<g transform="translate(350 72)"><circle r="60" fill="#ffe3a0" opacity=".1"/><g class="wx-rays" stroke="#ffd47a" stroke-width="2.5" stroke-linecap="round">${rays}</g><circle r="29" fill="#ffd17a"/></g>`:'';
   const moon=night?`<path d="M363 29a30 30 0 1 0 27 44 31 31 0 0 1-27-44" fill="#e2ebd0"/><circle cx="352" cy="55" r="48" fill="#e1e9ff" opacity=".035"/>`:'';
-  const cloud=(x,y,scale,opacity)=>`<g transform="translate(${x} ${y}) scale(${scale})" opacity="${opacity}"><path class="wx-cloud" d="M-95 20h180a27 27 0 0 0-8-53 37 37 0 0 0-65-16 48 48 0 0 0-84 21 25 25 0 0 0-23 48Z" fill="${rain?'#a6bac9':'#d7e1e3'}"/></g>`;
-  const cloudArt=clouds?cloud(130,76,1.15,.35)+cloud(340,84,1.05,.7)+cloud(215,108,1.1,.9):!night?cloud(85,105,.55,.42):'';
-  const count=key==='light'?17:key==='heavy'?40:key==='extreme'?65:0;
-  const drops=Array.from({length:count},(_,i)=>`<path class="wx-drop" d="M${i*73%520-20} ${i*37%140-30}l-7 ${key==='light'?13:22}" style="animation-delay:-${(i%17)/10}s;animation-duration:${key==='light'?1.4:key==='heavy'?.8:.55}s"/>`).join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 220" role="img" aria-label="${s.label} illustration" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="${id}-sky" x2="0" y2="1"><stop stop-color="${s.top}"/><stop offset="1" stop-color="${s.bottom}"/></linearGradient><linearGradient id="${id}-land" x2="0" y2="1"><stop stop-color="#174b4a"/><stop offset="1" stop-color="#091f2e"/></linearGradient></defs><rect width="480" height="220" fill="url(#${id}-sky)"/>${stars}${sun}${moon}${cloudArt}<g fill="none" stroke="#b9ddf5" stroke-width="1.5" stroke-linecap="round" opacity=".65">${drops}</g><path d="M0 174Q72 157 140 173T285 168T480 174V220H0Z" fill="#3c6570" opacity=".6"/><path d="M0 194Q105 172 245 191T480 185V220H0Z" fill="url(#${id}-land)"/><g fill="none" stroke="#6daba0" stroke-width="1" opacity=".22"><path d="M0 205q240-25 480-3M25 220l85-36M165 220l45-32M315 220l-15-28M440 220l-55-32"/></g><g transform="translate(44 169)" fill="#102d35"><path d="M0 27Q3 2 6-25H9Q5 1 5 27Z"/><path d="M7-23Q-22-43-28-24Q-10-33 7-23M7-23Q-10-53 7-47Q2-35 7-23M7-23Q33-49 40-28Q21-37 7-23M7-23Q37-22 31-5Q22-21 7-23"/></g></svg>`;
+  const cloud=(x,y,scale,opacity,layer='')=>`<g transform="translate(${x} ${y}) scale(${scale})" opacity="${opacity}"><path class="wx-cloud ${layer}" d="M-95 20h180a27 27 0 0 0-8-53 37 37 0 0 0-65-16 48 48 0 0 0-84 21 25 25 0 0 0-23 48Z" fill="${rain?'#a6bac9':'#d7e1e3'}"/></g>`;
+  const stratus=`<g class="wx-stratus"><path d="M-70 48Q40 32 135 44T310 40T550 44V76Q420 88 318 78T115 81T-70 76Z" fill="#b0c0ca" opacity=".44"/><path d="M-70 66Q30 54 135 65T330 60T550 65V91Q435 103 320 94T110 96T-70 91Z" fill="#c0cdd3" opacity=".72"/><path d="M-70 84Q40 75 145 83T335 81T550 84V104Q440 111 330 104T120 107T-70 104Z" fill="#bacbd3" opacity=".9"/></g>`;
+  const cloudArt=key==='light'?stratus:key==='cloudy'?cloud(105,60,.95,.32,'wx-cloud-far')+cloud(355,82,1.15,.57,'wx-cloud-mid')+cloud(210,111,1.2,.8,'wx-cloud-near'):clouds?cloud(130,76,1.15,.35)+cloud(340,84,1.05,.7)+cloud(215,108,1.1,.9):!night?cloud(85,105,.55,.42):'';
+  const cloudySky=key==='cloudy'?'<ellipse class="wx-cloud-glow" cx="320" cy="110" rx="160" ry="85" fill="#f9e1a6" opacity=".06"/>':'';
+  const fieldShadow=key==='cloudy'?`<g clip-path="url(#${id}-fields)"><path class="wx-field-shadow" d="M-140 171h130l75 55H-65Z" fill="#041b26" opacity=".25"/><path class="wx-field-shadow wx-shadow-second" d="M-140 171h90l75 55H-65Z" fill="#041b26" opacity=".2"/></g>`:'';
+  const count=key==='light'?54:key==='heavy'?40:key==='extreme'?65:0;
+  const drops=Array.from({length:count},(_,i)=>key==='light'?`<path class="wx-drop wx-drizzle" d="M${i*73%500-10} ${108+i*17%62}l-.8 ${3+i%3}" style="animation-delay:-${(i%23)/8}s;animation-duration:${2.2+i%5*.17}s"/>`:`<path class="wx-drop" d="M${i*73%520-20} ${i*37%140-30}l-7 22" style="animation-delay:-${(i%17)/10}s;animation-duration:${key==='heavy'?.8:.55}s"/>`).join('');
+  const lightning=key==='extreme'?`<g class="wx-lightning" aria-hidden="true"><ellipse class="wx-lightning-glow" cx="270" cy="90" rx="100" ry="55" fill="#c9dcff" opacity=".14"/><path class="wx-bolt" d="M282 91l-18 30 13-3-27 45 9-32-13 3 17-43M266 119l23 13-9 15" fill="none" stroke="#dbeaff" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/></g>`:'';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 220" role="img" aria-label="${s.label} illustration" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="${id}-meteor"><stop stop-color="#f0f7ff"/><stop offset="1" stop-color="#b5d7ff" stop-opacity="0"/></linearGradient><clipPath id="${id}-drizzle"><rect y="106" width="480" height="71"/></clipPath><linearGradient id="${id}-sky" x2="0" y2="1"><stop stop-color="${s.top}"/><stop offset="1" stop-color="${s.bottom}"/></linearGradient><linearGradient id="${id}-land" x2="0" y2="1"><stop stop-color="#174b4a"/><stop offset="1" stop-color="#091f2e"/></linearGradient><clipPath id="${id}-fields"><path d="M0 174Q72 157 140 173T285 168T480 174V220H0Z"/></clipPath></defs><rect width="480" height="220" fill="url(#${id}-sky)"/>${stars}${sun}${moon}${meteors}${cloudySky}${cloudArt}${lightning}<g fill="none" stroke="#b9ddf5" stroke-width="${key==='light'?.8:1.5}" stroke-linecap="round" opacity="${key==='light'?.5:.65}" ${key==='light'?`clip-path="url(#${id}-drizzle)"`:''}>${drops}</g><path d="M0 174Q72 157 140 173T285 168T480 174V220H0Z" fill="#3c6570" opacity=".6"/><path d="M0 194Q105 172 245 191T480 185V220H0Z" fill="url(#${id}-land)"/><g fill="none" stroke="#6daba0" stroke-width="1" opacity=".22"><path d="M0 205q240-25 480-3M25 220l85-36M165 220l45-32M315 220l-15-28M440 220l-55-32"/></g>${fieldShadow}<g transform="translate(44 169)" fill="#102d35"><path d="M0 27Q3 2 6-25H9Q5 1 5 27Z"/><path d="M7-23Q-22-43-28-24Q-10-33 7-23M7-23Q-10-53 7-47Q2-35 7-23M7-23Q33-49 40-28Q21-37 7-23M7-23Q37-22 31-5Q22-21 7-23"/></g></svg>`;
 }
 
 export class Ambience {
-  constructor(){this.context=null;this.master=null;this.nodes=[];this.windNodes=[];this.voices=new Set();this.timer=null;this.thunderTimer=null;this.key=null;this.enabled=false;this.volume=.22;}
+  constructor(){this.context=null;this.master=null;this.nodes=[];this.windNodes=[];this.voices=new Set();this.timer=null;this.cloudBirdTimer=null;this.key=null;this.enabled=false;this.volume=.22;}
   async enable(automatic=false){
     const Audio=globalThis.AudioContext||globalThis.webkitAudioContext;
     if(!Audio)throw Error('This browser does not support ambient audio.');
@@ -82,7 +87,8 @@ export class Ambience {
     this.enabled=true;return true;
   }
   stop(){
-    clearInterval(this.timer);clearTimeout(this.thunderTimer);this.timer=null;this.thunderTimer=null;
+    clearInterval(this.timer);this.timer=null;
+    clearTimeout(this.cloudBirdTimer);this.cloudBirdTimer=null;
     this.stopWind();
     for(const voice of this.voices){try{voice.source.stop();}catch{}for(const n of voice.nodes){try{n.disconnect();}catch{}}}this.voices.clear();
     for(const n of this.nodes){try{n.stop();}catch{}try{n.disconnect();}catch{}}this.nodes=[];this.key=null;
@@ -102,16 +108,34 @@ export class Ambience {
     source.connect(filter);filter.connect(gain);gain.connect(this.master);lfo.connect(modulation);modulation.connect(gain.gain);
     source.start();lfo.start();this.windNodes=[source,filter,gain,lfo,modulation];
   }
-  trackVoice(source,nodes){
-    const voice={source,nodes};this.voices.add(voice);
+  trackVoice(source,nodes,kind=null){
+    const voice={source,nodes,kind};this.voices.add(voice);
     source.onended=()=>{for(const n of nodes)n.disconnect();this.voices.delete(voice);};
   }
-  scheduleThunder(delay){
-    this.thunderTimer=setTimeout(()=>{
-      this.thunderTimer=null;
-      if(!this.enabled||document.hidden||this.key!=='extreme')return;
-      this.thunder();this.scheduleThunder(25000+Math.random()*20000);
+  scheduleCloudBird(delay){
+    this.cloudBirdTimer=setTimeout(()=>{
+      this.cloudBirdTimer=null;
+      if(!this.enabled||document.hidden||this.key!=='cloudy')return;
+      this.cloudBird();this.scheduleCloudBird(9000+Math.random()*10000);
     },delay);
+  }
+  cloudBird(){
+    // Original synthesized distant bird phrase, not a station microphone feed.
+    const ctx=this.context,t=ctx.currentTime,base=1650+Math.random()*600;
+    const notes=2+Math.floor(Math.random()*2);
+    for(let j=0;j<notes;j++){
+      const osc=ctx.createOscillator(),gain=ctx.createGain(),start=t+j*.24,duration=.17+Math.random()*.08;
+      const pitch=base*(j%2===0?1:1.15);osc.type='sine';osc.frequency.setValueAtTime(pitch,start);osc.frequency.exponentialRampToValueAtTime(pitch*1.42,start+.06);osc.frequency.exponentialRampToValueAtTime(pitch*1.08,start+duration);
+      gain.gain.setValueAtTime(.0001,start);gain.gain.exponentialRampToValueAtTime(.014,start+.025);gain.gain.exponentialRampToValueAtTime(.0001,start+duration);
+      osc.connect(gain);gain.connect(this.master);this.trackVoice(osc,[osc,gain]);osc.start(start);osc.stop(start+duration+.03);
+    }
+  }
+  stopThunder(){
+    for(const voice of [...this.voices])if(voice.kind==='thunder'){
+      try{voice.source.stop();}catch{}
+      for(const n of voice.nodes){try{n.disconnect();}catch{}}
+      this.voices.delete(voice);
+    }
   }
   thunder(){
     // Decorative ambience only: the station does not measure thunder or lightning.
@@ -121,7 +145,7 @@ export class Ambience {
     const source=ctx.createBufferSource();source.buffer=buffer;
     const filter=ctx.createBiquadFilter();filter.type='lowpass';filter.frequency.setValueAtTime(240,t);filter.frequency.exponentialRampToValueAtTime(65,t+duration);filter.Q.value=.7;
     const gain=ctx.createGain();gain.gain.setValueAtTime(.0001,t);gain.gain.exponentialRampToValueAtTime(.55,t+.45);gain.gain.exponentialRampToValueAtTime(.3,t+1.3);gain.gain.exponentialRampToValueAtTime(.12,t+3);gain.gain.exponentialRampToValueAtTime(.0001,t+duration);
-    source.connect(filter);filter.connect(gain);gain.connect(this.master);this.trackVoice(source,[source,filter,gain]);source.start(t);source.stop(t+duration+.02);
+    source.connect(filter);filter.connect(gain);gain.connect(this.master);this.trackVoice(source,[source,filter,gain],'thunder');source.start(t);source.stop(t+duration+.02);
   }
   gain(value){if(this.master)this.master.gain.setTargetAtTime(value,this.context.currentTime,.2);}
   play(key,allowed,gust=0){
@@ -131,18 +155,46 @@ export class Ambience {
     this.stop();this.key=key;
     const ctx=this.context, rain=['light','heavy','extreme'].includes(key);
     const buffer=ctx.createBuffer(1,ctx.sampleRate*4,ctx.sampleRate), data=buffer.getChannelData(0);
-    let brown=0;for(let i=0;i<data.length;i++){brown=(brown+Math.random()*.04-.02)/1.02;data[i]=rain?(Math.random()*2-1)*.42:brown*2;}
+    let brown=0;for(let i=0;i<data.length;i++){brown=(brown+Math.random()*.04-.02)/1.02;data[i]=key==='cloudy'?(Math.random()*2-1)*.28*(.45+.25*Math.sin(2*Math.PI*i/data.length)+.12*Math.sin(4*Math.PI*i/data.length)):rain?(Math.random()*2-1)*.42:brown*2;}
     const source=ctx.createBufferSource();source.buffer=buffer;source.loop=true;
-    const filter=ctx.createBiquadFilter();filter.type=rain?'lowpass':'bandpass';filter.frequency.value=({sunny:320,night:180,cloudy:460,light:1100,heavy:3600,extreme:5200})[key];filter.Q.value=.45;
-    const bed=ctx.createGain();bed.gain.value=({sunny:.28,night:.13,cloudy:.55,light:.16,heavy:.7,extreme:.85})[key];
-    source.connect(filter);filter.connect(bed);bed.connect(this.master);source.start();this.nodes.push(source,filter,bed);
+    const filter=ctx.createBiquadFilter();filter.type=key==='cloudy'?'highpass':rain?'lowpass':'bandpass';filter.frequency.value=({sunny:320,night:180,cloudy:1400,light:1100,heavy:3600,extreme:5200})[key];filter.Q.value=.45;
+    const bed=ctx.createGain();bed.gain.value=({sunny:.28,night:.13,cloudy:.08,light:.16,heavy:.7,extreme:.85})[key];
+    source.connect(filter);bed.connect(this.master);this.nodes.push(source,filter,bed);
+    if(key==='cloudy'){
+      const soften=ctx.createBiquadFilter();soften.type='lowpass';soften.frequency.value=5000;soften.Q.value=.5;filter.connect(soften);soften.connect(bed);this.nodes.push(soften);this.scheduleCloudBird(1200+Math.random()*1400);
+    }else filter.connect(bed);
+    source.start();
     this.setGust(gust);
-    if(key==='extreme')this.scheduleThunder(3000+Math.random()*4000);
     if(key==='sunny'||key==='night'){
       const chirp=()=>{if(!this.enabled||document.hidden||this.key!==key)return;const t=ctx.currentTime;
         for(let j=0;j<(key==='night'?3:2);j++){const osc=ctx.createOscillator(),g=ctx.createGain(),start=t+j*.17,duration=key==='night'?.06:.12;osc.type='sine';osc.frequency.setValueAtTime(key==='night'?4200:1800+Math.random()*900,start);osc.frequency.exponentialRampToValueAtTime(key==='night'?4400:3400,start+duration);g.gain.setValueAtTime(.0001,start);g.gain.exponentialRampToValueAtTime(.035,start+.015);g.gain.exponentialRampToValueAtTime(.0001,start+duration);osc.connect(g);g.connect(this.master);this.trackVoice(osc,[osc,g]);osc.start(start);osc.stop(start+duration+.02);}}
       chirp();this.timer=setInterval(chirp,key==='night'?2100:4400);
     }
+  }
+}
+
+// One shared storm clock drives both illustrations and the delayed rumble.
+// Localized, single fades avoid full-screen flashes or rapid strobing.
+export class StormEffects {
+  constructor({flash,thunder,clear}){this.flash=flash;this.thunder=thunder;this.clear=clear;this.active=false;this.strikeTimer=null;this.rumbleTimer=null;this.fadeTimer=null;}
+  update(allowed){
+    if(!allowed){this.stop();return;}
+    if(this.active)return;
+    this.active=true;this.schedule(2000+Math.random()*2000);
+  }
+  schedule(delay){
+    this.strikeTimer=setTimeout(()=>{
+      this.strikeTimer=null;if(!this.active)return;
+      this.flash();
+      this.fadeTimer=setTimeout(()=>{this.fadeTimer=null;this.clear();},700);
+      this.rumbleTimer=setTimeout(()=>{this.rumbleTimer=null;if(this.active)this.thunder();},800+Math.random()*700);
+      this.schedule(8000+Math.random()*6000);
+    },delay);
+  }
+  stop(){
+    this.active=false;
+    clearTimeout(this.strikeTimer);clearTimeout(this.rumbleTimer);clearTimeout(this.fadeTimer);
+    this.strikeTimer=null;this.rumbleTimer=null;this.fadeTimer=null;this.clear();
   }
 }
 
@@ -159,12 +211,19 @@ export function setupAtmosphere(){
   // Start animation on each visit; always respect the device motion preference.
   let paused=reduced.matches;
   const savedVolume=Number(read('weather-volume'));if(read('weather-volume')!==null && Number.isFinite(savedVolume))audio.volume=Math.max(0,Math.min(.6,savedVolume));volume.value=Math.round(audio.volume*100);
+  const storm=new StormEffects({
+    flash:()=>{const offset=Math.round(Math.random()*160-80);for(const root of [visual,background]){const bolt=root.querySelector('.wx-lightning');if(bolt){bolt.setAttribute('transform',`translate(${offset} 0)`);bolt.classList.add('wx-strike');}}},
+    clear:()=>{for(const root of [visual,background])root.querySelector('.wx-lightning')?.classList.remove('wx-strike');},
+    thunder:()=>{if(audio.enabled&&audio.context?.state==='running'&&current.fresh&&!paused&&!reduced.matches&&!document.hidden&&current.key==='extreme')audio.thunder();}
+  });
   function sync(){
     const running=audio.enabled&&audio.context?.state==='running',gust=number(latest?.gust)?latest.gust:0;
     document.body.classList.toggle('weather-motion-paused',paused||!current.fresh||document.hidden);
     motionButton.textContent=paused?'▶ Animation':'Ⅱ Animation';motionButton.setAttribute('aria-pressed',String(!paused));motionButton.setAttribute('aria-label',paused?'Play weather animation':'Pause weather animation');
     soundButton.textContent=running?'♫ Sound on':'♫ Sound off';soundButton.setAttribute('aria-pressed',String(running));
     volume.disabled=!running;audio.play(current.key,current.fresh,gust);
+    const stormAllowed=current.key==='extreme'&&current.fresh&&!paused&&!reduced.matches&&!document.hidden;
+    storm.update(stormAllowed);if(!stormAllowed)audio.stopThunder();
     if(startButton)startButton.hidden=!(needsStart&&current.fresh);
     const windy=current.fresh&&gust>GUST_WHOOSH_THRESHOLD;
     let status=running?(current.fresh?SCENES[current.key].sound+(windy?' · gust whooshes ('+gust.toLocaleString('en-IN',{maximumFractionDigits:1})+' km/h)':''):'Sound paused · observation unavailable or stale'):needsStart?'Browser requires a tap to start sound & animation':current.fresh?'Sound muted · tap Sound to enable':'Waiting for a fresh observation · sound paused';
@@ -202,7 +261,7 @@ export function setupAtmosphere(){
   motionButton.addEventListener('click',()=>{paused=!paused;sync();});
   reduced.addEventListener('change',e=>{if(e.matches)paused=true;sync();});
   document.addEventListener('visibilitychange',()=>update(latest,latestStation,sample));
-  addEventListener('pagehide',()=>{++requestVersion;audioWanted=false;audio.enabled=false;audio.gain(0);audio.stop();});
+  addEventListener('pagehide',()=>{storm.stop();++requestVersion;audioWanted=false;audio.enabled=false;audio.gain(0);audio.stop();});
   addEventListener('pageshow',event=>{if(event.persisted){audioWanted=true;autoplayAttempted=false;update(latest,latestStation,sample);}});
   function update(observation,station,demo=false){
     latest=observation;latestStation=station;sample=demo;

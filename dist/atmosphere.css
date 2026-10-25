@@ -23,7 +23,35 @@ body>.topbar,body>main{position:relative;z-index:1}body>.skip{z-index:2}body>#to
 @keyframes wx-rain{from{transform:translate(18px,-40px);opacity:0}20%{opacity:.85}to{transform:translate(-24px,110px);opacity:.1}}
 @keyframes wx-twinkle{from{opacity:.25}to{opacity:.95}}
 body.light #weather-background{opacity:.15}body.light .atmosphere-controls,body.light .weather-picture figcaption{background:#fff}
-@media(prefers-reduced-motion:reduce){.wx-rays,.wx-cloud,.wx-drop,.wx-star{animation:none!important}#weather-background{transition:none}}
+@media(prefers-reduced-motion:reduce){.wx-rays,.wx-cloud,.wx-drop,.wx-star,.wx-field-shadow,.wx-cloud-glow{animation:none!important}#weather-background{transition:none}}
 @media(max-width:600px){.atmosphere-controls{padding:14px;margin-bottom:20px;gap:13px}.atmosphere-intro{min-width:100%;gap:10px}.atmosphere-intro strong{font-size:16px}.atmosphere-intro small{font-size:13px}.atmosphere-actions{width:100%;gap:10px}.atmosphere-actions .button{font-size:14px;padding:9px 11px}.weather-volume-label{font-size:13px;gap:5px}#weather-volume{width:65px}.weather-picture{margin-top:16px}#weather-scene-label{font-size:18px}#weather-scene-detail{font-size:13px}.weather-scene-method{font-size:14px}}
 
 #weather-start{font-size:15px;font-weight:700;max-width:100%;white-space:normal}.atmosphere-actions{justify-content:flex-end}@media(max-width:600px){#weather-start{width:100%}.atmosphere-actions{justify-content:flex-start}}
+/* Overcast paddy scene: independently drifting cloud depths and field shadows. */
+.wx-cloud-far{animation:wx-cloud-far 60s ease-in-out infinite alternate;animation-delay:-19s}
+.wx-cloud-mid{animation:wx-cloud-mid 42s ease-in-out infinite alternate;animation-delay:-25s}
+.wx-cloud-near{animation:wx-cloud-near 29s ease-in-out infinite alternate;animation-delay:-8s}
+.wx-field-shadow{animation:wx-field-shadow 28s linear infinite;animation-delay:-10s}
+.wx-shadow-second{animation-duration:39s;animation-delay:-27s}
+.wx-cloud-glow{animation:wx-cloud-glow 17s ease-in-out infinite alternate;animation-delay:-4s}
+.weather-motion-paused .wx-field-shadow,.weather-motion-paused .wx-cloud-glow{animation-play-state:paused!important}
+@keyframes wx-cloud-far{from{transform:translateX(-36px)}to{transform:translateX(40px)}}
+@keyframes wx-cloud-mid{from{transform:translateX(54px)}to{transform:translateX(-56px)}}
+@keyframes wx-cloud-near{from{transform:translateX(-52px)}to{transform:translateX(62px)}}
+@keyframes wx-field-shadow{from{transform:translateX(-40px)}to{transform:translateX(680px)}}
+@keyframes wx-cloud-glow{from{opacity:.025}to{opacity:.12}}
+
+/* Fine drizzle falls only below a broad, low stratiform deck. */
+.wx-stratus{animation:wx-stratus 52s ease-in-out infinite alternate}
+.wx-drizzle{animation-name:wx-drizzle;stroke-width:.8}
+@keyframes wx-stratus{from{transform:translateX(-12px)}to{transform:translateX(12px)}}
+@keyframes wx-drizzle{from{transform:translate(1px,-16px);opacity:0}18%{opacity:.7}82%{opacity:.55}to{transform:translate(-3px,42px);opacity:0}}
+/* A short three-meteor shower, followed by more than a minute of quiet sky. */
+.wx-meteor{opacity:0;animation:wx-meteor 78s linear infinite}
+@keyframes wx-meteor{0%{opacity:0;transform:translate(0,0)}.2%{opacity:.85}1.5%{opacity:0;transform:translate(130px,60px)}100%{opacity:0;transform:translate(130px,60px)}}
+/* Storm light is confined to the illustration and uses a single soft fade. */
+.wx-lightning{opacity:0}
+.wx-lightning.wx-strike{animation:wx-strike .65s ease-out both}
+@keyframes wx-strike{0%{opacity:0}24%{opacity:.8}100%{opacity:0}}
+.weather-motion-paused .wx-stratus,.weather-motion-paused .wx-meteor,.weather-motion-paused .wx-lightning{animation-play-state:paused!important}
+@media(prefers-reduced-motion:reduce){.wx-stratus,.wx-meteor,.wx-lightning{animation:none!important}.wx-meteor,.wx-lightning{display:none}}
