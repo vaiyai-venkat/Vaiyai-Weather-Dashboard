@@ -5,7 +5,7 @@ const number = n => typeof n === 'number' && Number.isFinite(n);
 export const SCENES = Object.freeze({
   sunny: {label:'Sunny sky', sound:'Soft breeze & birds', top:'#143d60', bottom:'#e9ad62'},
   night: {label:'Night sky', sound:'Quiet night & crickets', top:'#09132f', bottom:'#354b78'},
-  cloudy: {label:'Cloudy sky', sound:'Distant birds & soft foliage', top:'#24364d', bottom:'#8296a2'},
+  cloudy: {label:'Cloudy sky', sound:'Occasional distant bird calls', top:'#24364d', bottom:'#8296a2'},
   light: {label:'Light rain · stratiform drizzle', sound:'Very light rain', top:'#1c344c', bottom:'#607d8c'},
   heavy: {label:'Moderate to heavy rain', sound:'Steady rainfall', top:'#152337', bottom:'#435c71'},
   extreme: {label:'Very heavy to extreme rain', sound:'Intense rain & synchronized illustrative thunder', top:'#101c30', bottom:'#354558'},
@@ -153,16 +153,19 @@ export class Ambience {
     this.gain(this.volume);
     if(this.key===key){this.setGust(gust);return;}
     this.stop();this.key=key;
+    if(key==='cloudy'){
+      // No continuous noise bed: foliage synthesis sounded like unobserved wind.
+      this.scheduleCloudBird(1200+Math.random()*1400);
+      this.setGust(gust);return;
+    }
     const ctx=this.context, rain=['light','heavy','extreme'].includes(key);
     const buffer=ctx.createBuffer(1,ctx.sampleRate*4,ctx.sampleRate), data=buffer.getChannelData(0);
-    let brown=0;for(let i=0;i<data.length;i++){brown=(brown+Math.random()*.04-.02)/1.02;data[i]=key==='cloudy'?(Math.random()*2-1)*.28*(.45+.25*Math.sin(2*Math.PI*i/data.length)+.12*Math.sin(4*Math.PI*i/data.length)):rain?(Math.random()*2-1)*.42:brown*2;}
+    let brown=0;for(let i=0;i<data.length;i++){brown=(brown+Math.random()*.04-.02)/1.02;data[i]=rain?(Math.random()*2-1)*.42:brown*2;}
     const source=ctx.createBufferSource();source.buffer=buffer;source.loop=true;
-    const filter=ctx.createBiquadFilter();filter.type=key==='cloudy'?'highpass':rain?'lowpass':'bandpass';filter.frequency.value=({sunny:320,night:180,cloudy:1400,light:1100,heavy:3600,extreme:5200})[key];filter.Q.value=.45;
-    const bed=ctx.createGain();bed.gain.value=({sunny:.28,night:.13,cloudy:.08,light:.16,heavy:.7,extreme:.85})[key];
+    const filter=ctx.createBiquadFilter();filter.type=rain?'lowpass':'bandpass';filter.frequency.value=({sunny:320,night:180,light:1100,heavy:3600,extreme:5200})[key];filter.Q.value=.45;
+    const bed=ctx.createGain();bed.gain.value=({sunny:.28,night:.13,light:.16,heavy:.7,extreme:.85})[key];
     source.connect(filter);bed.connect(this.master);this.nodes.push(source,filter,bed);
-    if(key==='cloudy'){
-      const soften=ctx.createBiquadFilter();soften.type='lowpass';soften.frequency.value=5000;soften.Q.value=.5;filter.connect(soften);soften.connect(bed);this.nodes.push(soften);this.scheduleCloudBird(1200+Math.random()*1400);
-    }else filter.connect(bed);
+    filter.connect(bed);
     source.start();
     this.setGust(gust);
     if(key==='sunny'||key==='night'){
