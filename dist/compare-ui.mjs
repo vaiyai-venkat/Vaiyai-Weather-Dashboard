@@ -1,4 +1,4 @@
-import {setupWeeklyComparison} from './weekly-ui.mjs';
+import {setupWeeklyComparison} from './weekly-ui.mjs?v=20261031-all-plot-labels-v3';
 import {weeklyVariable} from './weekly.mjs';
 import {finite} from './analytics.mjs';
 import {VARIABLES,comparisonSlots,alignPeriod,periodWindow,previousAnchor,axisDomain,seriesSummary} from './comparison.mjs';
@@ -69,7 +69,7 @@ export function setupComparison({getRows,getToday,getDemo,getIntraday,getTimeZon
   const x=i=>L+i/(slots.length-1)*pw,y=(v,vi)=>T+ph-(v-domains[vi][0])/(domains[vi][1]-domains[vi][0])*ph;
   for(let i=0;i<=4;i++){const yy=T+ph-i/4*ph;add(root,'line',{x1:L,x2:W-R,y1:yy,y2:yy,stroke:'var(--grid)','stroke-dasharray':'3 5'});for(const [vi,domain]of domains.entries())add(root,'text',{x:vi?W-R+9:L-9,y:yy+3,'text-anchor':vi?'start':'end',fill:colors[vi]},format(domain[0]+(domain[1]-domain[0])*i/4));}
   const ticks=state.frequency==='week'?[0,1,2,3,4,5,6]:state.frequency==='month'?[0,4,9,14,19,24,30]:[0,60,121,182,244,305,365];
-  for(const i of ticks)add(root,'text',{x:x(i),y:H-10,'text-anchor':i===0?'start':i===slots.length-1?'end':'middle'},slots[i].label);
+  for(const i of ticks)add(root,'text',{x:x(i)+(i===0?8:0),y:H-10,'text-anchor':i===0?'start':i===slots.length-1?'end':'middle',class:'comparison-date-tick'},slots[i].label);
   for(const [vi,v]of variables.entries())for(const p of periods){let d='',active=false,last=null;for(let i=0;i<p.points.length;i++){const value=p.points[i].row?.[v.key];if(!finite(value)){active=false;last=null;continue;}if(v.circular&&last!==null&&Math.abs(last-value)>180)active=false;d+=(active?'L':'M')+x(i)+','+y(value,vi);active=true;last=value;}add(root,'path',{d,fill:'none',stroke:colors[vi],'stroke-width':p.id==='A'?2.8:2.4,'stroke-dasharray':p.id==='B'?'6 4':'none','stroke-linejoin':'round'});
    // A singleton must remain visible even when missing days split a series.
    p.points.forEach((point,i)=>{const value=point.row?.[v.key];if(finite(value)&&(slots.length<50||!finite(p.points[i-1]?.row?.[v.key])&&!finite(p.points[i+1]?.row?.[v.key])))add(root,'circle',{cx:x(i),cy:y(value,vi),r:slots.length<50?3.4:3,fill:p.id==='B'?'var(--panel)':colors[vi],stroke:colors[vi],'stroke-width':1.5});});

@@ -2,7 +2,7 @@ import {setupAtmosphere} from './atmosphere.mjs?v=20261025-cloudy-birds-only-v14
 import {finite,mean,sum,extreme,circularMean,compass,dateAdd,rangeFor,fillDays,rainSum,roseBins} from './analytics.mjs';
 import {demoData,demoIntradayForDay} from './demo.mjs?v=20261024-five-minute-weekly';
 import {enrichDaily,enrichInterval} from './comparison.mjs';
-import {setupComparison} from './compare-ui.mjs?v=20261024-five-minute-weekly';
+import {setupComparison} from './compare-ui.mjs?v=20261031-all-plot-labels-v3';
 import {setupPageViews} from './pages.mjs';
 const $=s=>document.querySelector(s),text=(s,v)=>{$(s).textContent=v;};
 const atmosphere=setupAtmosphere();
@@ -180,7 +180,9 @@ function drawChart(type,data,oneDay){
  if(cumulative){let total=0;series=series.map(r=>{if(!finite(r.rain_total))return {...r,rain_total:null};total+=r.rain_total;return {...r,rain_total:total};});}
  const values=series.flatMap(r=>keys.map(k=>r[k])).filter(finite);
  if(!values.length){const n=el('div','empty',oneDay?'No interval readings for this date':'No sensor readings in this period');n.append(el('small','',oneDay?'Daily records below may still be available.':'Missing values are kept blank.'));container.append(n);return;}
- const W=Math.max(320,Math.round(container.clientWidth)),H=280,L=66,R=18,T=20,B=38,pw=W-L-R,ph=H-T-B;
+ const W=Math.max(320,Math.round(container.clientWidth)),allDailyDates=!oneDay&&data.length>1&&data.length<=7;
+ const stackedDates=allDailyDates&&W<500;
+ const H=280,L=66,R=18,T=20,B=stackedDates?58:38,pw=W-L-R,ph=H-T-B;
  let min=Math.min(...values),max=Math.max(...values);
  if(type==='humidity'){min=0;max=100;}else if(['rain','solar','uv','wind'].includes(type)){min=0;max=Math.max(max*1.15,1);}else{min=Math.floor(min-2);max=Math.ceil(max+2);}
  if(max===min)max=min+1;
@@ -188,8 +190,19 @@ function drawChart(type,data,oneDay){
  const root=svg('svg',{viewBox:`0 0 ${W} ${H}`,role:'img','aria-label':`${type} chart, ${dateLabel(range.start)} to ${dateLabel(range.end)}. Use arrow keys on chart to explore.`});container.append(root);
  for(let i=0;i<=4;i++){const v=min+(max-min)*i/4,yy=y(v);append(root,'line',{x1:L,y1:yy,x2:W-R,y2:yy,stroke:'var(--grid)','stroke-dasharray':'3 5','stroke-width':.7});append(root,'text',{x:L-9,y:yy+3,'text-anchor':'end'},fmt(v,max>50?0:1));}
  const tickFractions=W<420?[0,.5,1]:[0,.25,.5,.75,1];
- const ticks=[...new Set(tickFractions.map(f=>Math.round((data.length-1)*f)))];
- for(const i of ticks){if(!data[i])continue;const label=oneDay?new Date(data[i].time).toLocaleTimeString('en-GB',{timeZone:manifest.station.timezone,hour:'2-digit',minute:'2-digit'}):new Date(data[i].date+'T12:00:00Z').toLocaleDateString('en-GB',{timeZone:'UTC',day:'numeric',month:'short'});append(root,'text',{x:x(i),y:H-10,'text-anchor':i===0?'start':i===data.length-1?'end':'middle'},label);}
+ const ticks=allDailyDates?data.map((_,i)=>i):[...new Set(tickFractions.map(f=>Math.round((data.length-1)*f)))];
+ for(const i of ticks){
+  if(!data[i])continue;
+  const day=oneDay?null:new Date(data[i].date+'T12:00:00Z');
+  const label=oneDay?new Date(data[i].time).toLocaleTimeString('en-GB',{timeZone:manifest.station.timezone,hour:'2-digit',minute:'2-digit'}):day.toLocaleDateString('en-GB',{timeZone:'UTC',day:'numeric',month:'short'});
+  // Keep the first date clear of the vertical axis and its value labels.
+  const labelX=x(i)+(i===0?8:stackedDates&&i===1?3:0);
+  const node=append(root,'text',{x:labelX,y:H-(stackedDates?28:10),'text-anchor':allDailyDates?'middle':i===0?'start':i===data.length-1?'end':'middle',class:'chart-date-tick',...(!oneDay?{'data-date':data[i].date}:{})},stackedDates?null:label);
+  if(stackedDates){
+   append(node,'tspan',{x:labelX},day.toLocaleDateString('en-GB',{timeZone:'UTC',day:'numeric'}));
+   append(node,'tspan',{x:labelX,dy:16},day.toLocaleDateString('en-GB',{timeZone:'UTC',month:'short'}));
+  }
+ }
  const color={temperature:'var(--orange)',rain:'var(--blue)',humidity:'var(--purple)',wind:'var(--cyan)',solar:'var(--gold)',uv:'var(--pink)',pressure:'var(--pressure)'}[type];
  const defs=append(root,'defs');const grad=append(defs,'linearGradient',{id:`gradient-${type}`,x1:'0',y1:'0',x2:'0',y2:'1'});append(grad,'stop',{offset:0,'stop-color':color,'stop-opacity':.22});append(grad,'stop',{offset:1,'stop-color':color,'stop-opacity':0});
  if(['temperature','pressure'].includes(type)||(type==='humidity'&&!oneDay)){const low=type==='temperature'?'temp_min':type==='pressure'?'pressure_min':'humidity_min',high=type==='temperature'?'temp_max':type==='pressure'?'pressure_max':'humidity_max';append(root,'path',{d:areaPath(series,low,high,x,y),fill:color,opacity:.1});}

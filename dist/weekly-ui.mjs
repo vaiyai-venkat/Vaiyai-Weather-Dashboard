@@ -44,7 +44,7 @@ export function setupWeeklyComparison({getIntraday,getTimeZone,getDemo}){
   const x=minute=>L+minute/1440*pw,y=(value,vi)=>T+ph-(value-domains[vi][0])/(domains[vi][1]-domains[vi][0])*ph;
   const root=svg('svg',{viewBox:`0 0 ${W} ${H}`,role:'img','aria-label':'Weekly comparison of seven daily curves from midnight 00:00 to midnight 24:00. Use arrow keys to inspect station time.'});container.append(root);
   for(let tick=0;tick<=4;tick++){const yy=T+ph-tick/4*ph;add(root,'line',{x1:L,x2:W-R,y1:yy,y2:yy,stroke:'var(--grid)','stroke-dasharray':'3 5'});for(const [vi,domain]of domains.entries())add(root,'text',{x:vi?W-R+10:L-10,y:yy+4,'text-anchor':vi?'start':'end'},fmt(domain[0]+tick/4*(domain[1]-domain[0])));}
-  for(const hour of [0,4,8,12,16,20,24])add(root,'text',{x:x(hour*60),y:H-11,'text-anchor':hour===0?'start':hour===24?'end':'middle'},String(hour).padStart(2,'0')+':00');
+  for(const hour of [0,4,8,12,16,20,24])add(root,'text',{x:x(hour*60)+(hour===0?8:0),y:H-11,'text-anchor':hour===0?'start':hour===24?'end':'middle',class:'weekly-time-tick'},String(hour).padStart(2,'0')+':00');
   for(const [di,day]of days.entries())for(const [vi,v]of variables.entries()){
    add(root,'path',{d:weeklyPath(day.points,v,x,value=>y(value,vi)),fill:'none',stroke:DAY_COLORS[di],'stroke-width':vi?2.2:2.7,'stroke-dasharray':vi?'6 4':'none','stroke-linejoin':'round'});
    day.points.forEach((p,i)=>{const value=valueFor(p,v),before=day.points[i-1],after=day.points[i+1];if(finite(value)&&(!before||!finite(valueFor(before,v))||p.minute-before.minute>30)&&(!after||!finite(valueFor(after,v))||after.minute-p.minute>30))add(root,'circle',{cx:x(p.minute),cy:y(value,vi),r:3,fill:DAY_COLORS[di]});});
