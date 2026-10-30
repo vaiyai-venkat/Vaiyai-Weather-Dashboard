@@ -1,0 +1,186 @@
+name: Restore weather history
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    name: Recover saved IPAPAN3 archive
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: weather-data-collection
+      cancel-in-progress: false
+    env:
+      RECOVERY_COMMIT: f0a09b7bdfe1e873c6408e13ceb723c69d9e4061
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Read the saved archive from Git history
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=1 origin "$RECOVERY_COMMIT"
+          RECOVERY_DIR="$RUNNER_TEMP/weather-history-recovery"
+          mkdir -p "$RECOVERY_DIR"
+          git archive "$RECOVERY_COMMIT" dist/data | tar -x -C "$RECOVERY_DIR"
+          echo "RECOVERY_DATA=$RECOVERY_DIR/dist/data" >> "$GITHUB_ENV"
+
+      - name: Merge history and retain newer readings
+        shell: bash
+        run: |
+          python - <<'PYTHON'
+          """Merge a verified IPAPAN3 archive snapshot into the current saved data, offline."""
+          import datetime as dt
+          import json
+          import math
+          import os
+          from pathlib import Path
+          import re
+          
+          SNAPSHOT = 'f0a09b7bdfe1e873c6408e13ceb723c69d9e4061'
+          
+          
+          def load(path, default):
+              return json.loads(path.read_text()) if path.exists() else default
+          
+          
+          def write(path, value):
+              path.parent.mkdir(parents=True, exist_ok=True)
+              temporary = path.with_suffix(path.suffix + '.recovery-tmp')
+              temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n')
+              temporary.replace(path)
+          
+          
+          def numeric(value):
+              return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+          
+          
+          def merge_record(earlier, current, daily=False):
+              result = dict(earlier)
+              result.update({key: value for key, value in current.items() if value is not None})
+              if 'sources' in earlier or 'sources' in current:
+                  result['sources'] = sorted(set(earlier.get('sources', [])) | set(current.get('sources', [])))
+              if daily:
+                  # Preserve recorded extremes and cumulative rainfall; never add counters.
+                  for key, value in earlier.items():
+                      latest = current.get(key)
+                      if numeric(value) and numeric(latest):
+                          if key.endswith('_max') or key == 'rain_total':
+                              result[key] = max(value, latest)
+                          elif key.endswith('_min'):
+                              result[key] = min(value, latest)
+                  old_peak, new_peak = earlier.get('rain_rate_max'), current.get('rain_rate_max')
+                  if numeric(old_peak) and (not numeric(new_peak) or old_peak > new_peak):
+                      for key, value in earlier.items():
+                          if key.startswith('rain_rate_max'):
+                              result[key] = value
+              return result
+          
+          
+          def merge_rows(earlier, current, key, daily=False):
+              merged = {}
+              for row in earlier + current:
+                  if not isinstance(row, dict) or not row.get(key):
+                      raise ValueError(f'Archive record missing {key}')
+                  identity = row[key]
+                  merged[identity] = merge_record(merged.get(identity, {}), row, daily=daily)
+              return [merged[identity] for identity in sorted(merged)]
+          
+          
+          def recover(source, target):
+              saved = load(source / 'manifest.json', {})
+              live = load(target / 'manifest.json', {})
+              if saved.get('station', {}).get('id') != 'IPAPAN3' or live.get('station', {}).get('id') != 'IPAPAN3':
+                  raise ValueError('Both archives must belong to IPAPAN3')
+              if saved.get('history_days', 0) < 900:
+                  raise ValueError('Recovery source does not contain the expected complete saved archive')
+          
+              output = {}
+              for folder, key in [('history', 'date'), ('intraday', 'time')]:
+                  names = {p.name for root in (source, target) for p in (root / folder).glob('*.json')}
+                  for name in sorted(names):
+                      earlier = load(source / folder / name, [])
+                      current = load(target / folder / name, [])
+                      output[folder + '/' + name] = merge_rows(earlier, current, key, daily=folder == 'history')
+          
+              # Include points held in either manifest as well as points in daily files.
+              for manifest in (saved, live):
+                  by_day = {}
+                  for point in manifest.get('intraday', []):
+                      day = point.get('date')
+                      if not day or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', day):
+                          raise ValueError('Invalid station-local date in saved interval data')
+                      by_day.setdefault(day, []).append(point)
+                  for day, points in by_day.items():
+                      name = 'intraday/' + day + '.json'
+                      # Current daily-file records take precedence over manifest duplicates.
+                      output[name] = merge_rows(points, output.get(name, []), 'time')
+          
+              history = [row for path, records in output.items() if path.startswith('history/') for row in records]
+              dates = {row['date'] for row in history}
+              if len(history) != len(dates):
+                  raise ValueError('Duplicate daily dates across monthly archives')
+              if len(dates) < saved['history_days']:
+                  raise ValueError('Recovery unexpectedly reduced the saved date count')
+          
+              state_old = load(source / 'collector-state.json', {})
+              state_now = load(target / 'collector-state.json', {})
+              state = {**state_old, **state_now}
+              checked = set(state_now.get('checked_dates', []))
+              if state_old.get('qc_filter_version') == state_now.get('qc_filter_version'):
+                  checked.update(state_old.get('checked_dates', []))
+              state['checked_dates'] = sorted(checked)
+          
+              manifest = {**saved, **live}
+              ordered = sorted(dates)
+              manifest.update(months=sorted({day[:7] for day in dates}), history_days=len(dates),
+                              first_date=ordered[0], last_date=ordered[-1],
+                              intraday_dates=sorted(Path(path).stem for path in output if path.startswith('intraday/')))
+              target_start = manifest.get('backfill', {}).get('target_start') or manifest['station']['installation_date']
+              first, last = dt.date.fromisoformat(target_start), dt.date.fromisoformat(ordered[-1])
+              calendar = {(first + dt.timedelta(days=i)).isoformat() for i in range((last - first).days + 1)}
+              manifest['backfill'] = {'target_start': target_start, 'checked_days': len(calendar & checked),
+                                      'remaining_days': len(calendar - checked), 'missing_observation_days': len(calendar - dates)}
+              today = live.get('today_coverage', {}).get('date') or live.get('current', {}).get('date') or ordered[-1]
+              points = output.get('intraday/' + today + '.json', [])
+              manifest['intraday'] = points
+              manifest['today_coverage'] = {'date': today, 'first': points[0]['time'] if points else None,
+                                            'through': points[-1]['time'] if points else None, 'points': len(points)}
+              manifest['archive_recovery'] = {'source_commit': SNAPSHOT, 'recovered_at': dt.datetime.now(dt.timezone.utc).isoformat(),
+                                               'history_days_before': live.get('history_days', 0), 'history_days_after': len(dates)}
+              output['collector-state.json'] = state
+              output['manifest.json'] = manifest
+          
+              # Finish every merge and validation before changing the target files.
+              for path, value in output.items():
+                  write(target / path, value)
+              print(f"Restored {len(dates)} recorded days across {len(manifest['months'])} months; "
+                    f"{len(manifest['intraday_dates'])} interval archives. Newer saved readings retained.")
+              return manifest
+          
+          
+          if __name__ == '__main__':
+              recover(Path(os.environ['RECOVERY_DATA']), Path('dist/data'))
+          PYTHON
+
+      - name: Save recovered archive
+        shell: bash
+        run: |
+          git config user.name "Weather archive bot"
+          git config user.email "weather-bot@users.noreply.github.com"
+          git add dist/data
+          if ! git diff --cached --quiet; then
+            git commit -m "Restore IPAPAN3 historical archive [skip ci]"
+            git push origin main
+          fi
+          echo "Recovery saved. The next dashboard update will publish the restored archive."
