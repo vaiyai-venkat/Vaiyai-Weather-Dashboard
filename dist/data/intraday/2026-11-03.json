@@ -1,1 +1,1 @@
-[]
+[{"time":"2026-11-03T09:04:37+00:00","date":"2026-11-03","qc_status":-1.0,"temp":28.5,"temp_min":28.5,"temp_max":28.5,"humidity":86.0,"humidity_min":86.0,"humidity_max":86.0,"wind":2.1,"wind_max":2.1,"gust":5.5,"wind_dir":282.0,"solar":40.7,"uv":0.0,"rain_total":2.49,"rain_rate":13.21,"dew":25.9,"pressure":1008.94,"pressure_min":1008.94,"pressure_max":1008.94,"source":"wu","resolution":"live","field_sources":{},"rain_rate_observed_max":13.21,"rain_rate_peak_source":"wu"}]
